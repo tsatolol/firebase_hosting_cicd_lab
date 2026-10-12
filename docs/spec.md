@@ -241,16 +241,27 @@ state の扱い: `backend.tf` は GCS（prefix: `bootstrap`、バケット名は
 
 モジュール `hosting-env` が作成するリソース:
 
-1. API の有効化（Firebase Management、Firebase Hosting、IAM ほか）
-2. `google_firebase_project`（google-beta）
-3. `google_firebase_hosting_site`（サイト ID = プロジェクト ID）
+1. API の有効化（Firebase Management、Firebase Hosting）。IAM などの基本 API は bootstrap で有効化済み
+2. `google_firebase_project`（google-beta）。削除しても state から外れるだけで、GCP 上の Firebase は残る（プロバイダの仕様）
+3. `google_firebase_hosting_site`（google-beta、サイト ID = プロジェクト ID のデフォルトサイト）。Firebase 追加時に自動作成されていれば、プロバイダがそれを取り込む。prod は `deletion_policy = "PREVENT"`
 4. デプロイ用サービスアカウント `deployer`（env プロジェクト内）
-   - `roles/firebasehosting.admin`（必要に応じて `roles/serviceusage.serviceUsageConsumer` を追加。実装時に検証する）
+   - `roles/firebasehosting.admin`
+   - `roles/serviceusage.serviceUsageConsumer`（firebase-tools が API の有効状態を確認し、クォータをこのプロジェクトに付けるため）
 5. Workload Identity 連携の紐付け（`deployer` への `roles/iam.workloadIdentityUser`）
    - stg: `...:environment:stg`（live デプロイ）と `...:pull_request`（プレビュー）
    - prod: `...:environment:prod` のみ
 
-backend: `gcs`（バケット `fhcl-tfstate-xxxx`、prefix `envs/<env>/`）。plan は `-lock=false` で実行する（読み取り専用の SA のため）。
+プロバイダ: google / google-beta とも `user_project_override = true`、`billing_project = <env プロジェクト>`（Firebase の API はクォータプロジェクトの指定が必要なため）。
+
+入力変数: `project_id` と `workload_identity_provider`。CI では `TF_VAR_*` で GitHub Variables から渡す。
+
+backend: `gcs`（バケット `fhcl-tfstate-xxxx`、prefix `envs/<env>`）。plan は `-lock=false` で実行する（読み取り専用の SA のため）。
+
+ワークフロー（`terraform.yml`）:
+
+- PR（同一リポジトリのみ）: `tf-plan` で stg / prod の plan を並列実行し、環境ごとに 1 つの PR コメントを作成・更新する
+- `main` への push（`infra/envs/**`、`infra/modules/**`、`terraform.yml` の変更時）と `workflow_dispatch`: `infra-stg` で stg を apply → `infra-prod` の承認後に prod を apply
+- apply 後、ジョブのサマリーに `deployer` SA と Hosting の URL を表示する（`DEPLOY_SA` の登録に使う）
 
 ### 7.4 GitHub Variables
 

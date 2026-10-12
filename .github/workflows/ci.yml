@@ -52,7 +52,7 @@ jobs:
       # backend には接続せず、構文と型だけを検証する（GCP の認証は不要）
       - name: Terraform validate
         run: |
-          for dir in infra/bootstrap; do
+          for dir in infra/bootstrap infra/envs/stg infra/envs/prod; do
             echo "::group::$dir"
             terraform -chdir="$dir" init -backend=false -input=false -lockfile=readonly
             terraform -chdir="$dir" validate

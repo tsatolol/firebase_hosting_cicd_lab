@@ -122,7 +122,7 @@ terraform output -raw github_variables_commands
 | スコープ | 変数 |
 | --- | --- |
 | Repository | `GCP_WIF_PROVIDER`, `TF_STATE_BUCKET`, `TF_PLAN_SA`, `STG_PROJECT_ID`, `PROD_PROJECT_ID` |
-| Environment `stg` / `prod` | `GCP_PROJECT_ID`（`DEPLOY_SA` はフェーズ 4 で追加する） |
+| Environment `stg` / `prod` | `GCP_PROJECT_ID`（`DEPLOY_SA` はフェーズ 4 の apply 後に追加する。手順 4） |
 | Environment `infra-stg` / `infra-prod` | `GCP_PROJECT_ID`, `TF_APPLY_SA` |
 
 > Secrets は使わない（Workload Identity 連携のため不要）。
@@ -145,7 +145,16 @@ terraform output -raw github_variables_commands
    - Target tags: Include by pattern `v*`
    - Rules: Restrict creations、Restrict updates、Restrict deletions
 
-## 4. 2 回目以降に bootstrap を変更するとき
+## 4. デプロイ用 SA の登録（フェーズ 4 の apply 後）
+
+`terraform.yml` の apply が成功すると、ジョブのサマリー（Actions の実行画面の Summary）に `deployer_service_account` が表示される。これを各 Environment の `DEPLOY_SA` に登録する。
+
+```sh
+gh variable set DEPLOY_SA --env stg --body 'deployer@fhcl-stg-xxxx.iam.gserviceaccount.com'
+gh variable set DEPLOY_SA --env prod --body 'deployer@fhcl-prod-xxxx.iam.gserviceaccount.com'
+```
+
+## 5. 2 回目以降に bootstrap を変更するとき
 
 ```sh
 cd infra/bootstrap

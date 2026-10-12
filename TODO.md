@@ -87,18 +87,18 @@
 
 ## フェーズ 3: bootstrap の apply と GitHub の設定（👤）
 
-- [ ] 👤 `docs/setup.md` に従って `infra/bootstrap` をローカルで apply する
-- [ ] 👤 state を GCS へ移行する
-- [ ] 👤 GitHub の Environments を作成する
-  - [ ] `stg`（ブランチ: `main`）
-  - [ ] `prod`（Required reviewers: 自分、ref: タグ `v*` とブランチ `main`）
-  - [ ] `infra-stg`（ブランチ: `main`）
-  - [ ] `infra-prod`（Required reviewers: 自分、ブランチ: `main`）
-- [ ] 👤 GitHub Variables を登録する（`docs/spec.md` §7.4）
-- [ ] 👤 ルールセットを設定する
-  - [ ] `main`: PR 必須、`ci` の成功が必須
-  - [ ] タグ `v*`: 作成・削除できるのは管理者のみ
-- [ ] 🤖 手順でつまずいた点があれば `docs/setup.md` を修正する
+- [x] 👤 `docs/setup.md` に従って `infra/bootstrap` をローカルで apply する
+- [x] 👤 state を GCS へ移行する
+- [x] 👤 GitHub の Environments を作成する
+  - [x] `stg`（ブランチ: `main`）
+  - [x] `prod`（Required reviewers: 自分、ref: タグ `v*` とブランチ `main`）
+  - [x] `infra-stg`（ブランチ: `main`）
+  - [x] `infra-prod`（Required reviewers: 自分、ブランチ: `main`）
+- [x] 👤 GitHub Variables を登録する（`docs/spec.md` §7.4）
+- [x] 👤 ルールセットを設定する
+  - [x] `main`: PR 必須、`ci` の成功が必須
+  - [x] タグ `v*`: 作成・削除できるのは管理者のみ
+- [x] 🤖 手順でつまずいた点があれば `docs/setup.md` を修正する（特になし）
 
 **完了条件**: GCP に 3 プロジェクト・state バケット・WIF・Terraform 用 SA がある。GitHub の Environments・Variables・ルールセットが設定されている。
 
@@ -106,19 +106,19 @@
 
 ## フェーズ 4: Terraform envs と `terraform.yml`（PR #3）
 
-- [ ] 🤖 `infra/modules/hosting-env/`
-  - [ ] API の有効化（Firebase Management、Firebase Hosting など）
-  - [ ] `google_firebase_project`、`google_firebase_hosting_site`（サイト ID = プロジェクト ID）
-  - [ ] SA `deployer` と `roles/firebasehosting.admin`
-  - [ ] `deployer` への WIF の紐付け（変数で `sub` のリストを受け取る）
-- [ ] 🤖 `infra/envs/stg/`、`infra/envs/prod/`（backend の prefix、モジュールの呼び出し、`sub` の指定）
-- [ ] 🤖 `.github/workflows/terraform.yml`
-  - [ ] PR: `tf-plan` SA で stg / prod の plan（`-lock=false`）を実行し、結果を PR にコメントする
-  - [ ] main: `infra-stg` で apply → `infra-prod`（承認）で apply
-  - [ ] fork からの PR はスキップする
+- [x] 🤖 `infra/modules/hosting-env/`
+  - [x] API の有効化（Firebase Management、Firebase Hosting など）
+  - [x] `google_firebase_project`、`google_firebase_hosting_site`（サイト ID = プロジェクト ID）
+  - [x] SA `deployer` と `roles/firebasehosting.admin`、`roles/serviceusage.serviceUsageConsumer`
+  - [x] `deployer` への WIF の紐付け（変数で `sub` のリストを受け取る）
+- [x] 🤖 `infra/envs/stg/`、`infra/envs/prod/`（backend の prefix、モジュールの呼び出し、`sub` の指定）
+- [x] 🤖 `.github/workflows/terraform.yml`
+  - [x] PR: `tf-plan` SA で stg / prod の plan（`-lock=false`）を実行し、結果を PR にコメントする
+  - [x] main: `infra-stg` で apply → `infra-prod`（承認）で apply
+  - [x] fork からの PR はスキップする
 - [ ] 👤 PR の plan コメントを確認してマージする
 - [ ] 👤 `infra-prod` の承認をする
-- [ ] 👤 出力された `deployer` SA を Environment `stg` / `prod` の `DEPLOY_SA` に登録する
+- [ ] 👤 出力された `deployer` SA を Environment `stg` / `prod` の `DEPLOY_SA` に登録する（apply ジョブのサマリーに表示される）
 
 **完了条件**: stg / prod で Firebase と Hosting サイトが作成され、`terraform.yml` の plan と apply が成功している。
 
