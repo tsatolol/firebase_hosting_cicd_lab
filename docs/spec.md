@@ -218,9 +218,11 @@ infra/
    - 3 つとも state バケットに `roles/storage.legacyBucketReader`（オブジェクト一覧の取得はバケット単位でしか許可できないため、条件なし）
    - owner を使う理由: この SA は IAM も管理するため IAM の変更権限が必須で、それがあれば自分に owner を付け直せる。権限を絞っても安全性はあまり上がらない。代わりに、使えるジョブを Environment（`infra-prod` は承認必須）で限定し、権限の範囲を 1 プロジェクトに限ることでリスクを抑える
 7. Workload Identity 連携の紐付け（`roles/iam.workloadIdentityUser`、subject 単位で制限）
-   - `tf-plan` ← `repo:tsatolol/firebase_hosting_cicd_lab:pull_request`
-   - `tf-apply-stg` ← `repo:tsatolol/firebase_hosting_cicd_lab:environment:infra-stg`
-   - `tf-apply-prod` ← `repo:tsatolol/firebase_hosting_cicd_lab:environment:infra-prod`
+   - GitHub の OIDC トークンの `sub` は、オーナーとリポジトリに数値 ID が付いた形式（`repo:tsatolol@30972312/firebase_hosting_cicd_lab@1415534725:<コンテキスト>`）。リポジトリ ID は変数 `github_repository_id` で渡す
+   - `tf-plan` ← `<上記>:pull_request`
+   - `tf-apply-stg` ← `<上記>:environment:infra-stg`
+   - `tf-apply-prod` ← `<上記>:environment:infra-prod`
+   - 実際の `sub` は `terraform.yml` の「Show OIDC token claims」ステップ（`scripts/show-oidc-claims.sh`）で確認できる
 
 state の扱い: `backend.tf` は GCS（prefix: `bootstrap`、バケット名は `-backend-config` で渡す）。初回だけ `backend_override.tf`（ローカル backend）を置いて apply し、作成された GCS バケットに `terraform init -migrate-state` で移す。
 

@@ -29,8 +29,20 @@ variable "github_repository" {
   default     = "tsatolol/firebase_hosting_cicd_lab"
 }
 
+variable "github_repository_owner_id" {
+  description = "GitHub リポジトリのオーナーの数値 ID（OIDC トークンの sub に含まれる）"
+  type        = string
+  default     = "30972312"
+}
+
+variable "github_repository_id" {
+  description = "GitHub リポジトリの数値 ID（OIDC トークンの sub に含まれる）"
+  type        = string
+  default     = "1415534725"
+}
+
 variable "deployer_subjects" {
-  description = "デプロイ用 SA を使える GitHub OIDC トークンの sub（repo:<owner/repo>: より後ろ。例: environment:stg, pull_request）"
+  description = "デプロイ用 SA を使える GitHub OIDC トークンの sub のうち、リポジトリ部分より後ろ（例: environment:stg, pull_request）"
   type        = list(string)
 }
 

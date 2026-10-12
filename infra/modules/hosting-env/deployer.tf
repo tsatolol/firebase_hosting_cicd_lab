@@ -27,5 +27,5 @@ resource "google_service_account_iam_member" "deployer_wif" {
 
   service_account_id = google_service_account.deployer.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principal://iam.googleapis.com/${local.workload_identity_pool}/subject/repo:${var.github_repository}:${each.value}"
+  member             = "principal://iam.googleapis.com/${local.workload_identity_pool}/subject/${local.github_subject_repo}:${each.value}"
 }

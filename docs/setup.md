@@ -174,3 +174,4 @@ terraform apply
 | プロジェクト ID やバケット名が既に使われている | まれにサフィックスが他と衝突する。プロジェクトがまだ 1 つも作成されていなければ、`terraform apply -replace='random_id.suffix' -target='google_project.this'` で別のサフィックスにする。作成済みのプロジェクトがある場合は削除保護（`deletion_policy = "PREVENT"`）で止まるので、状況を確認してから対処する |
 | Workload Identity Pool `github` が作れない（already exists） | 削除したプールは 30 日間同じ ID を使えない。削除前のプールを復元するか、ID を変える |
 | `terraform init` で backend の初期化を求められる | `-backend-config=backend.tfbackend` を付けて init する |
+| GitHub Actions で `Permission 'iam.serviceAccounts.getAccessToken' denied` | OIDC トークンの `sub` と SA の WIF 紐付けが一致していない。ワークフローの「Show OIDC token claims」ステップに出る `sub` と、`terraform output` などで分かる principal を比べる。リポジトリやオーナーの ID が変わった場合は `github_repository_id` / `github_repository_owner_id` を直して bootstrap を apply し直す。紐付けの直後は反映まで数分かかることもある |

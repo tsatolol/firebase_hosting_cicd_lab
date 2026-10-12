@@ -40,7 +40,7 @@ Terraform（envs）は CI で実行する。ローカルで確認するときは
 
 - サービスアカウントキーを作成・使用しない。GCP への認証は Workload Identity 連携（`google-github-actions/auth`）のみで行う。
 - 課金アカウント ID、`*.tfvars`、`*.tfstate` をコミットしない（`terraform.tfvars.example` のみコミットする）。
-- WIF の紐付けは OIDC の `sub`（`environment:<名前>` / `pull_request`）単位で行い、リポジトリ全体には許可しない。
+- WIF の紐付けは OIDC の `sub`（`environment:<名前>` / `pull_request`）単位で行い、リポジトリ全体には許可しない。`sub` はオーナー・リポジトリに数値 ID が付いた形式（`repo:tsatolol@30972312/firebase_hosting_cicd_lab@1415534725:pull_request`）なので、principal はこの形式で組み立てる。
 
 ### GitHub Actions
 

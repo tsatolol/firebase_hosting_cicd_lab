@@ -20,6 +20,12 @@ variable "github_repository_owner_id" {
   default     = "30972312"
 }
 
+variable "github_repository_id" {
+  description = "GitHub リポジトリの数値 ID（OIDC トークンの sub に含まれる）"
+  type        = string
+  default     = "1415534725"
+}
+
 variable "region" {
   description = "state バケットなどを置くリージョン"
   type        = string

@@ -8,6 +8,10 @@ locals {
 
   # projects/<番号>/locations/global/workloadIdentityPools/<プール>/providers/<プロバイダ> からプール名を取り出す
   workload_identity_pool = regex("^(projects/[^/]+/locations/global/workloadIdentityPools/[^/]+)/providers/", var.workload_identity_provider)[0]
+
+  # OIDC トークンの sub のリポジトリ部分（例: repo:tsatolol@30972312/firebase_hosting_cicd_lab@1415534725）
+  github_repository_parts = split("/", var.github_repository)
+  github_subject_repo     = "repo:${local.github_repository_parts[0]}@${var.github_repository_owner_id}/${local.github_repository_parts[1]}@${var.github_repository_id}"
 }
 
 resource "google_project_service" "this" {
