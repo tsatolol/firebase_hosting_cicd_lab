@@ -110,6 +110,14 @@
 
     button:hover { border-color: var(--accent); }
 
+    .footer {
+      margin: 24px 0 0;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.875rem;
+    }
+
     .status {
       min-height: 1.5em;
       margin: 8px 0 0;
@@ -136,6 +144,10 @@
     </dl>
     <button id="copy-button" type="button">デプロイ情報をコピー</button>
     <p id="copy-status" class="status" role="status" aria-live="polite"></p>
+    <p class="footer">
+      Firebase Hosting と GitHub Actions のデプロイパイプライン検証用ページ ／
+      <a id="repo-link" href="https://github.com/tsatolol/firebase_hosting_cicd_lab">ソースコード</a>
+    </p>
   </main>
 
   <script>

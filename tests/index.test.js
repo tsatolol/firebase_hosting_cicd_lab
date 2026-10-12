@@ -117,6 +117,13 @@ describe("初期表示", () => {
     expect(document.getElementById("deployed-ago").textContent).toMatch(/^（(.+前|たった今)）$/);
   });
 
+  it("フッターにリポジトリへのリンクがある", async () => {
+    const { document } = await loadPage(STG_DATA);
+    expect(document.getElementById("repo-link").getAttribute("href")).toBe(
+      "https://github.com/tsatolol/firebase_hosting_cicd_lab",
+    );
+  });
+
   it("プレースホルダーが未置換のときは「未設定」と UNKNOWN を表示する", async () => {
     const { document } = await loadPage();
     expect(document.body.classList.contains("env-unknown")).toBe(true);
