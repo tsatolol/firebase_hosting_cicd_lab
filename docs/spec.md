@@ -1,6 +1,6 @@
 # Firebase Hosting CI/CD ラボ 仕様書
 
-- ステータス: ドラフト v0.1（2026-10-12）
+- ステータス: v0.2（2026-10-12、未決事項を決定）
 - リポジトリ: `tsatolol/firebase_hosting_cicd_lab`（public）
 
 ## 1. 目的
@@ -33,6 +33,10 @@ Google Cloud（Firebase Hosting）と GitHub Actions を使い、単一の HTML 
 | プロジェクト ID | `fhcl-<env>-<乱数4桁>`（例: `fhcl-stg-a1b2`） |
 | リージョン | `asia-northeast1` |
 | 課金アカウント | 変数で渡す（コードに書かない） |
+| プレビューの有効期限 | 7 日（PR を更新するたびに延長される） |
+| 失敗時の通知 | GitHub の標準通知のみ |
+| GitHub Release | 自動作成しない（デプロイ履歴は GitHub Environments で確認する） |
+| Terraform 用 SA の権限 | `roles/owner` のまま（§7.2 の理由を参照） |
 
 ## 3. 全体アーキテクチャ
 
@@ -205,7 +209,7 @@ infra/
    - `tf-plan`: stg / prod に `roles/viewer` と `roles/iam.securityReviewer`。state バケットに読み取り権限
    - `tf-apply-stg`: stg に `roles/owner`。state バケットの `envs/stg/` に書き込み権限
    - `tf-apply-prod`: prod に `roles/owner`。state バケットの `envs/prod/` に書き込み権限
-   - ※ ラボ用途のため owner を使う。最小権限への絞り込みは今後の課題
+   - owner を使う理由: この SA は IAM も管理するため IAM の変更権限が必須で、それがあれば自分に owner を付け直せる。権限を絞っても安全性はあまり上がらない。代わりに、使えるジョブを Environment（`infra-prod` は承認必須）で限定し、権限の範囲を 1 プロジェクトに限ることでリスクを抑える
 7. Workload Identity 連携の紐付け（`roles/iam.workloadIdentityUser`、subject 単位で制限）
    - `tf-plan` ← `repo:tsatolol/firebase_hosting_cicd_lab:pull_request`
    - `tf-apply-stg` ← `repo:tsatolol/firebase_hosting_cicd_lab:environment:infra-stg`
@@ -291,7 +295,4 @@ firebase.json, package.json, eslint.config.js, .stylelintrc.json, .htmlhintrc, .
 
 ## 12. 未決事項
 
-- [ ] プレビューチャネルの有効期限（案: 7 日）
-- [ ] デプロイ失敗時の通知方法（案: GitHub の標準通知のみ）
-- [ ] prod デプロイ後に GitHub Release を自動作成するか
-- [ ] Terraform 用 SA の権限を owner から絞り込むか
+なし（v0.2 ですべて決定し、§2 に反映済み）。

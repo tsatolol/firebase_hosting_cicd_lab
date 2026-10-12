@@ -25,13 +25,13 @@
 ## フェーズ 0: 準備
 
 - [ ] 👤 仕様書（`docs/spec.md`）と `CLAUDE.md` の内容を確認する
-- [ ] 👤 `docs/spec.md` §12 の未決事項を決める
-  - [ ] プレビューチャネルの有効期限（案: 7 日）
-  - [ ] デプロイ失敗時の通知方法（案: GitHub の標準通知のみ）
-  - [ ] prod デプロイ後に GitHub Release を自動作成するか
-  - [ ] Terraform 用 SA の権限を owner から絞り込むか
-- [ ] 🤖 決定内容を `docs/spec.md` に反映する
-- [ ] 👤 `main` ブランチを作る（現在リモートに `main` がない）。このブランチ（仕様書・CLAUDE.md・TODO.md）を `main` にする
+- [x] 👤 `docs/spec.md` §12 の未決事項を決める
+  - [x] プレビューチャネルの有効期限 → 7 日
+  - [x] デプロイ失敗時の通知方法 → GitHub の標準通知のみ
+  - [x] prod デプロイ後に GitHub Release を自動作成するか → 作成しない
+  - [x] Terraform 用 SA の権限を owner から絞り込むか → owner のまま
+- [x] 🤖 決定内容を `docs/spec.md` に反映する
+- [x] 👤 `main` ブランチを作る
 - [ ] 👤 GCP の課金アカウントに、プロジェクトを 3 つリンクできる空きがあるか確認する
 - [ ] 👤 Firebase コンソールを一度開き、利用規約に同意しておく
 
