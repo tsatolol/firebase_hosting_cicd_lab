@@ -9,6 +9,7 @@ Firebase Hosting と GitHub Actions で、単一の HTML ページを stg / prod
 - `src/index.html` — 配信するページ。CSS/JS はこのファイルに内包する（外部ファイルに分けない）
 - `scripts/build.sh` — `src/` を `dist/` にコピーし、`__APP_ENV__` などのプレースホルダーを置換する
 - `scripts/smoke-test.sh` — デプロイ後の URL の HTTP 200 と `data-commit` の一致を確認する
+- `scripts/show-oidc-claims.sh` — GitHub Actions の OIDC トークンのクレーム（`sub` など）を表示する（WIF のデバッグ用）
 - `tests/` — Vitest + jsdom による単体テスト（`index.test.js`: ページ、`scripts.test.js`: build / smoke-test スクリプト）
 - `infra/bootstrap/` — プロジェクト・state バケット・WIF・Terraform 用 SA。**ローカルでのみ apply する**
 - `infra/modules/hosting-env/`, `infra/envs/{stg,prod}/` — Firebase / Hosting サイト / デプロイ用 SA。GitHub Actions で apply する
