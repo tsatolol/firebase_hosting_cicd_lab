@@ -98,7 +98,24 @@ rm terraform.tfstate terraform.tfstate.backup
 
 ## 3. GitHub の設定
 
+ここまでで GCP 側の準備はできた。この章では GitHub 側に、次の 3 つを設定する。
+
+| 設定 | ひとことで言うと |
+| --- | --- |
+| Environments | デプロイ先ごとの「関所」。どのブランチから実行できるか、誰の承認が必要かを決める |
+| Variables | ワークフローが読む設定値（GCP のプロジェクト ID など）。コードに直接書かずにここに置く |
+| ルールセット | `main` ブランチとリリース用タグを、うっかり壊されないように守るルール |
+
 ### 3-1. Environments
+
+**何をしているか**: GitHub Actions のジョブは `environment: prod` のように Environment を指定して動く。Environment ごとに「このブランチ（タグ）からしか実行できない」「誰かが承認するまで待つ」という条件を付けられる。GCP 側も、どの Environment のジョブかを見て使えるサービスアカウントを決めている（例: prod へデプロイする SA は Environment `prod` のジョブしか使えない）。そのため、ここで作る名前は GCP 側の設定と一致している必要がある。
+
+| Environment | 使い道 |
+| --- | --- |
+| `stg` | stg へのページのデプロイ（`main` へのマージで自動実行） |
+| `prod` | prod へのページのデプロイ（タグの push で実行。承認が必要） |
+| `infra-stg` | stg のインフラ（Terraform）の変更 |
+| `infra-prod` | prod のインフラ（Terraform）の変更（承認が必要） |
 
 リポジトリの **Settings → Environments → New environment** で 4 つ作る。
 
@@ -109,7 +126,13 @@ rm terraform.tfstate terraform.tfstate.backup
 | `infra-stg` | なし | Selected branches and tags: ブランチ `main` |
 | `infra-prod` | 自分（`tsatolol`）。「Prevent self-review」はオフ | Selected branches and tags: ブランチ `main` |
 
+- **Required reviewers**: 指定した人が画面で「Approve」を押すまで、ジョブが待機する。prod 系だけに付けて、本番への反映前に人の確認を挟む。
+- **Prevent self-review**: オンにすると「自分で起動したジョブを自分で承認できない」。承認できる人が自分しかいないので、オフにしておく。
+- **Deployment branches and tags**: ここに挙げたブランチ・タグ以外から起動したジョブは、この Environment を使えない（たとえば作業ブランチから prod にデプロイすることはできない）。
+
 ### 3-2. Variables
+
+**何をしているか**: ワークフローが GCP にアクセスするときに必要な値（プロジェクト ID、使うサービスアカウント、state を置くバケット名など）を登録する。どれも bootstrap が作ったもので、パスワードのような秘密の値ではない。リポジトリ全体で共通の値は「Repository」、環境ごとに違う値は各「Environment」に登録する。同じ名前（例: `GCP_PROJECT_ID`）でも、どの Environment のジョブかによって違う値が読まれる。
 
 `infra/bootstrap` で次を実行すると、登録用の `gh` コマンドが表示される。
 
@@ -125,15 +148,20 @@ terraform output -raw github_variables_commands
 | Environment `stg` / `prod` | `GCP_PROJECT_ID`（`DEPLOY_SA` はフェーズ 4 の apply 後に追加する。手順 4） |
 | Environment `infra-stg` / `infra-prod` | `GCP_PROJECT_ID`, `TF_APPLY_SA` |
 
-> Secrets は使わない（Workload Identity 連携のため不要）。
+> Secrets は使わない（Workload Identity 連携のため不要）。GitHub Actions は実行のたびに GitHub が発行する一時的な証明書で GCP にログインするので、パスワードや鍵を保存しておく必要がない。
 
 ### 3-3. ルールセット
+
+**何をしているか**: `main` ブランチは stg に自動でデプロイされ、`v*` タグは prod へのデプロイのきっかけになる。どちらも誤って変更されると困るので、ルールで守る。
+
+- `main`: 直接 push できなくし、必ず PR を通す。さらに、CI（`ci` チェック）が成功していないとマージできないようにする。
+- `v*` タグ: リリースの印なので、管理者（自分）以外は作成・変更・削除できないようにする。
 
 **Settings → Rules → Rulesets → New ruleset** で 2 つ作る。
 
 1. ブランチ用（New branch ruleset）
    - Name: `main`、Enforcement status: Active
-   - Target branches: Include default branch
+   - Target branches: Include default branch（**これだけにする**。「All branches」などを足すと、作業ブランチにも PR 必須がかかり、PR の元になるブランチへ push できなくなる）
    - Rules:
      - Restrict deletions
      - Block force pushes
