@@ -1,0 +1,5 @@
+# 初回の apply 専用。backend_override.tf にコピーすると、state をローカルに保存する。
+# state バケットができたら削除して、terraform init -migrate-state で GCS に移す。
+terraform {
+  backend "local" {}
+}

@@ -56,7 +56,7 @@
 - [x] 🤖 `firebase.json`（`public: dist`、`index.html` に `Cache-Control: no-cache`）
 - [x] 🤖 `.github/workflows/ci.yml`（lint / test / build。アクションは SHA で固定）
 - [x] 🤖 ローカルで `npm run lint && npm test && npm run build` が通ることを確認する
-- [ ] 👤 PR をレビューしてマージする
+- [x] 👤 PR をレビューしてマージする
 
 **完了条件**: PR 上で `ci` が成功し、`main` にマージされている。
 
@@ -64,21 +64,21 @@
 
 ## フェーズ 2: Terraform bootstrap のコード（PR #2）
 
-- [ ] 🤖 `infra/bootstrap/`
-  - [ ] `versions.tf`（Terraform・google・google-beta・random のバージョン固定）
-  - [ ] `random_id` とプロジェクト 3 つ（admin / stg / prod）、課金アカウントのリンク、`deletion_policy = "PREVENT"`
-  - [ ] admin プロジェクトの API 有効化
-  - [ ] state バケット（`asia-northeast1`、バージョニング、均一アクセス、公開アクセス防止）
-  - [ ] Workload Identity Pool / Provider（属性条件: リポジトリ名＋オーナー ID）
-  - [ ] SA: `tf-plan`、`tf-apply-stg`、`tf-apply-prod` と各プロジェクト・バケットへの IAM（prefix 単位の IAM 条件）
-  - [ ] SA への `roles/iam.workloadIdentityUser`（`sub` 単位）
-  - [ ] `outputs.tf`（GitHub Variables に登録する値をまとめて出力）
-  - [ ] `terraform.tfvars.example`
-- [ ] 🤖 `docs/setup.md` に bootstrap の手順を書く
-  - [ ] 事前準備（`gcloud auth login`、`gcloud auth application-default login`、quota project）
-  - [ ] 初回 apply（ローカル state）→ `backend.tf` を有効化 → `terraform init -migrate-state`
-  - [ ] 出力値を GitHub Variables に登録する手順
-- [ ] 🤖 `ci.yml` に `terraform fmt -check` と `terraform validate` を追加する
+- [x] 🤖 `infra/bootstrap/`
+  - [x] `versions.tf`（Terraform・google・random のバージョン固定。google-beta はフェーズ 4 の envs で使う）
+  - [x] `random_id` とプロジェクト 3 つ（admin / stg / prod）、課金アカウントのリンク、`deletion_policy = "PREVENT"`
+  - [x] API 有効化（全プロジェクトに WIF・IAM・Service Usage 系、admin に Cloud Storage）
+  - [x] state バケット（`asia-northeast1`、バージョニング、均一アクセス、公開アクセス防止）
+  - [x] Workload Identity Pool / Provider（属性条件: リポジトリ名＋オーナー ID）
+  - [x] SA: `tf-plan`、`tf-apply-stg`、`tf-apply-prod` と各プロジェクト・バケットへの IAM（prefix 単位の IAM 条件）
+  - [x] SA への `roles/iam.workloadIdentityUser`（`sub` 単位）
+  - [x] `outputs.tf`（GitHub Variables に登録する値をまとめて出力）
+  - [x] `terraform.tfvars.example`
+- [x] 🤖 `docs/setup.md` に bootstrap の手順を書く
+  - [x] 事前準備（`gcloud auth login`、`gcloud auth application-default login`、quota project）
+  - [x] 初回 apply（ローカル state、`-target` でプロジェクト → クォータプロジェクト設定 → 残り）→ `backend_override.tf` を削除 → `terraform init -migrate-state`
+  - [x] 出力値を GitHub Variables に登録する手順
+- [x] 🤖 `ci.yml` に `terraform fmt -check` と `terraform validate` を追加する
 - [ ] 👤 PR をレビューしてマージする
 
 **完了条件**: `terraform validate` が通り、手順書だけを見て bootstrap を実行できる。

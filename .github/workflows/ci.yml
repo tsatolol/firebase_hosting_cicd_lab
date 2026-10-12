@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  TERRAFORM_VERSION: 1.16.5
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -37,3 +40,21 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive -diff infra
+
+      # backend には接続せず、構文と型だけを検証する（GCP の認証は不要）
+      - name: Terraform validate
+        run: |
+          for dir in infra/bootstrap; do
+            echo "::group::$dir"
+            terraform -chdir="$dir" init -backend=false -input=false -lockfile=readonly
+            terraform -chdir="$dir" validate
+            echo "::endgroup::"
+          done
