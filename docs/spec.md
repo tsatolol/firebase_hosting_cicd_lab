@@ -1,6 +1,6 @@
 # Firebase Hosting CI/CD ラボ 仕様書
 
-- ステータス: v0.2（2026-10-12、未決事項を決定）
+- ステータス: v1.0（2026-10-12、実装と動作確認を完了）
 - リポジトリ: `tsatolol/firebase_hosting_cicd_lab`（public）
 
 ## 1. 目的
@@ -300,7 +300,16 @@ backend: `gcs`（バケット `fhcl-tfstate-xxxx`、prefix `envs/<env>`）。pla
 - bootstrap を実行する前に、`gcloud auth application-default login` と ADC の quota project の設定が必要。
 - Workload Identity の権限が反映されるまで数分かかることがある。
 
+動作確認で分かったこと（詳細は `docs/verification.md`）:
+
+- GitHub の OIDC トークンの `sub` は、オーナーとリポジトリに数値 ID が付いた形式（`repo:tsatolol@30972312/firebase_hosting_cicd_lab@1415534725:<コンテキスト>`）。WIF の principal はこの形式で組み立てる（§7.2）。
+- state がない環境では、読み取り専用の `tf-plan` で `terraform init` ができない。plan の前に state の有無を確認し、ない場合は空のローカル state に対して plan する（§7.3）。
+- デプロイ直後の数秒は、直前のバージョンが返ることがある。スモークテストはリトライ前提にする。
+- Claude Code（Web 版）の環境からはタグを push できない。リリースのタグは人が push する。
+
 ## 10. 動作確認シナリオ
+
+結果は `docs/verification.md` に記録した（fork からの PR のシナリオは未実施）。
 
 1. bootstrap を apply し、GitHub の Environments と Variables を設定する
 2. `infra/envs` の PR → plan のコメントを確認 → マージ → stg apply → 承認 → prod apply
@@ -310,18 +319,22 @@ backend: `gcs`（バケット `fhcl-tfstate-xxxx`、prefix `envs/<env>`）。pla
 6. 再度変更して `v1.1.0` をリリース → `workflow_dispatch` で `v1.0.0` を指定してロールバック
 7. 異常系: lint エラーの PR が失敗すること、main 上にないコミットへのタグで prod デプロイが失敗すること
 
-## 11. ディレクトリ構成（予定）
+## 11. ディレクトリ構成
 
 ```
-.github/workflows/  ci.yml, preview.yml, deploy-stg.yml, deploy-prod.yml, terraform.yml
-docs/               spec.md, setup.md（初期セットアップ手順）
-infra/              bootstrap/, modules/hosting-env/, envs/{stg,prod}/
-scripts/            build.sh, smoke-test.sh
-src/                index.html
-tests/              index.test.js
-firebase.json, package.json, eslint.config.js, .stylelintrc.json, .htmlhintrc, .nvmrc
+.github/workflows/       ci.yml, preview.yml, deploy-stg.yml, deploy-prod.yml, terraform.yml
+.github/actions/deploy/  ビルド → 認証 → デプロイ → スモークテストの共通処理（composite action）
+docs/                    spec.md, setup.md（セットアップと後片付け）, verification.md（動作確認の記録）
+infra/                   bootstrap/, modules/hosting-env/, envs/{stg,prod}/
+scripts/                 build.sh, smoke-test.sh, show-oidc-claims.sh
+src/                     index.html
+tests/                   index.test.js, scripts.test.js
+README.md, TODO.md, CLAUDE.md, firebase.json, package.json, eslint.config.js, .stylelintrc.json, .htmlhintrc, .nvmrc
 ```
 
 ## 12. 未決事項
 
-なし（v0.2 ですべて決定し、§2 に反映済み）。
+動作確認で見つかった、対応するかどうかを決めていない事項。
+
+- [ ] プレビューを `ci`（lint・テスト）の成功後にだけデプロイするか。現在は `ci` と並行して動くため、lint エラーのあるコミットでもプレビューが公開される（stg の一時 URL なので実害は小さい）。
+- [ ] Environment `infra-prod` の Required reviewers の再確認。フェーズ 4 の prod の apply が承認待ちにならずに実行された。ページの prod デプロイ（Environment `prod`）では承認待ちが機能している。
