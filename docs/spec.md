@@ -192,7 +192,8 @@ infra/
     prod/             # GitHub Actions で apply
 ```
 
-- Terraform と google / google-beta プロバイダのバージョンは、実装時点の最新安定版で固定する（`.terraform.lock.hcl` をコミットする）。
+- バージョン: Terraform `~> 1.16.0`（CI は 1.16.5）、google / google-beta `~> 8.6`、random `~> 3.9`。正確なバージョンは `.terraform.lock.hcl`（全プラットフォームのハッシュ入り）をコミットして固定する。
+- CI（`ci.yml`）で `terraform fmt -check` と `terraform validate`（backend なし）を実行する。
 
 ### 7.2 bootstrap（ローカル実行）
 
@@ -202,23 +203,28 @@ infra/
 
 1. `random_id`（プロジェクト ID のサフィックス）
 2. プロジェクト `fhcl-admin-xxxx` / `fhcl-stg-xxxx` / `fhcl-prod-xxxx` と課金アカウントのリンク（`deletion_policy = "PREVENT"`）
-3. admin プロジェクトで必要な API の有効化（IAM、IAM Credentials、STS、Cloud Resource Manager、Service Usage、Cloud Storage）
+3. API の有効化
+   - 全プロジェクト: IAM、IAM Credentials、STS、Cloud Resource Manager、Service Usage（WIF のトークン交換と、envs の Terraform が API 有効化や SA 作成をするため）
+   - admin のみ: Cloud Storage
 4. state バケット `fhcl-tfstate-xxxx`（`asia-northeast1`、バージョニング有効、均一なバケットレベルのアクセス、公開アクセス防止）
 5. Workload Identity Pool `github` とプロバイダ `github-actions`
    - issuer: `https://token.actions.githubusercontent.com`
    - 属性マッピング: `google.subject = assertion.sub`、`attribute.repository`、`attribute.repository_owner_id`
    - 属性条件: `assertion.repository == 'tsatolol/firebase_hosting_cicd_lab' && assertion.repository_owner_id == '30972312'`
 6. Terraform 用サービスアカウント（admin プロジェクト内）
-   - `tf-plan`: stg / prod に `roles/viewer` と `roles/iam.securityReviewer`。state バケットに読み取り権限
-   - `tf-apply-stg`: stg に `roles/owner`。state バケットの `envs/stg/` に書き込み権限
-   - `tf-apply-prod`: prod に `roles/owner`。state バケットの `envs/prod/` に書き込み権限
+   - `tf-plan`: stg / prod に `roles/viewer`、`roles/iam.securityReviewer`、`roles/serviceusage.serviceUsageConsumer`（envs のプロバイダがクォータを env プロジェクトに付け替えるため）。state は `envs/` 以下だけ読み取り可（`roles/storage.objectViewer`、IAM 条件で prefix を限定）
+   - `tf-apply-stg`: stg に `roles/owner`。state は `envs/stg/` 以下だけ読み書き可（`roles/storage.objectUser`、IAM 条件）
+   - `tf-apply-prod`: prod に `roles/owner`。state は `envs/prod/` 以下だけ読み書き可（同上）
+   - 3 つとも state バケットに `roles/storage.legacyBucketReader`（オブジェクト一覧の取得はバケット単位でしか許可できないため、条件なし）
    - owner を使う理由: この SA は IAM も管理するため IAM の変更権限が必須で、それがあれば自分に owner を付け直せる。権限を絞っても安全性はあまり上がらない。代わりに、使えるジョブを Environment（`infra-prod` は承認必須）で限定し、権限の範囲を 1 プロジェクトに限ることでリスクを抑える
 7. Workload Identity 連携の紐付け（`roles/iam.workloadIdentityUser`、subject 単位で制限）
    - `tf-plan` ← `repo:tsatolol/firebase_hosting_cicd_lab:pull_request`
    - `tf-apply-stg` ← `repo:tsatolol/firebase_hosting_cicd_lab:environment:infra-stg`
    - `tf-apply-prod` ← `repo:tsatolol/firebase_hosting_cicd_lab:environment:infra-prod`
 
-state の扱い: 初回はローカルの state で apply し、作成された GCS バケットに `terraform init -migrate-state` で移す（prefix: `bootstrap/`）。
+state の扱い: `backend.tf` は GCS（prefix: `bootstrap`、バケット名は `-backend-config` で渡す）。初回だけ `backend_override.tf`（ローカル backend）を置いて apply し、作成された GCS バケットに `terraform init -migrate-state` で移す。
+
+初回 apply の順序: ユーザーの ADC で API を有効化するにはクォータプロジェクトが必要なため、① `-target` でプロジェクトだけ作成 → ② admin プロジェクトをクォータプロジェクトに設定 → ③ 残りを apply、の順で行う。手順の詳細は `docs/setup.md`。
 
 入力変数（`terraform.tfvars` は `.gitignore` 対象。サンプルとして `terraform.tfvars.example` をコミットする）:
 
@@ -229,7 +235,7 @@ state の扱い: 初回はローカルの state で apply し、作成された 
 | `github_repository_owner_id` | `30972312` |
 | `region` | `asia-northeast1` |
 
-出力: 各プロジェクト ID、WIF プロバイダのリソース名、各サービスアカウントのメールアドレス、state バケット名。これらを GitHub の Variables に登録する。
+出力: 各プロジェクト ID、WIF プロバイダのリソース名、各サービスアカウントのメールアドレス、state バケット名、GitHub Variables を登録する `gh` コマンド（`github_variables_commands`）。
 
 ### 7.3 envs/stg・envs/prod（GitHub Actions で実行）
 

@@ -1,0 +1,7 @@
+# terraform.tfvars にコピーして値を設定する（terraform.tfvars は Git 管理外）。
+billing_account_id = "XXXXXX-XXXXXX-XXXXXX"
+
+# 以下は既定値のままでよい
+# github_repository          = "tsatolol/firebase_hosting_cicd_lab"
+# github_repository_owner_id = "30972312"
+# region                     = "asia-northeast1"

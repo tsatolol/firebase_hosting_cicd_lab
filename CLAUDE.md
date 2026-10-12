@@ -23,7 +23,7 @@ npm test         # Vitest
 npm run build    # dist/index.html を生成（APP_ENV などの環境変数で値を指定。省略時は local 用）
 ```
 
-Terraform（envs）は CI で実行する。ローカルで確認するときは `terraform fmt -check -recursive infra` と `terraform validate` まで。
+Terraform（envs）は CI で実行する。ローカルで確認するときは `terraform fmt -check -recursive infra` と `terraform -chdir=<dir> init -backend=false && terraform -chdir=<dir> validate` まで（CI の `ci` ジョブでも同じことをする）。`infra/bootstrap` の apply 手順は `docs/setup.md`。
 
 ## 環境とトリガー
 
@@ -57,7 +57,7 @@ Terraform（envs）は CI で実行する。ローカルで確認するときは
 
 ### Terraform
 
-- プロバイダのバージョンを固定し、`.terraform.lock.hcl` をコミットする。
+- プロバイダのバージョンを固定し、`.terraform.lock.hcl` をコミットする。ロックファイルには全プラットフォームのハッシュ（`zh:`）を含める（Mac / Windows でも init できるように）。
 - state は GCS バケット `fhcl-tfstate-xxxx`（prefix: `bootstrap/`, `envs/stg/`, `envs/prod/`）。
 - プロジェクトには `deletion_policy = "PREVENT"` を付ける。
 

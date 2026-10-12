@@ -11,6 +11,8 @@ dist/
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+*_override.tf
+*.tfbackend
 crash.log
 
 # Firebase
