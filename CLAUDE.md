@@ -9,6 +9,7 @@ Firebase Hosting と GitHub Actions で、単一の HTML ページを stg / prod
 - `src/index.html` — 配信するページ。CSS/JS はこのファイルに内包する（外部ファイルに分けない）
 - `scripts/build.sh` — `src/` を `dist/` にコピーし、`__APP_ENV__` などのプレースホルダーを置換する
 - `scripts/smoke-test.sh` — デプロイ後の URL の HTTP 200 と `data-commit` の一致を確認する
+- `scripts/show-oidc-claims.sh` — GitHub Actions の OIDC トークンのクレーム（`sub` など）を表示する（WIF のデバッグ用）
 - `tests/` — Vitest + jsdom による単体テスト（`index.test.js`: ページ、`scripts.test.js`: build / smoke-test スクリプト）
 - `infra/bootstrap/` — プロジェクト・state バケット・WIF・Terraform 用 SA。**ローカルでのみ apply する**
 - `infra/modules/hosting-env/`, `infra/envs/{stg,prod}/` — Firebase / Hosting サイト / デプロイ用 SA。GitHub Actions で apply する
@@ -39,7 +40,7 @@ Terraform（envs）は CI で実行する。ローカルで確認するときは
 
 - サービスアカウントキーを作成・使用しない。GCP への認証は Workload Identity 連携（`google-github-actions/auth`）のみで行う。
 - 課金アカウント ID、`*.tfvars`、`*.tfstate` をコミットしない（`terraform.tfvars.example` のみコミットする）。
-- WIF の紐付けは OIDC の `sub`（`environment:<名前>` / `pull_request`）単位で行い、リポジトリ全体には許可しない。
+- WIF の紐付けは OIDC の `sub`（`environment:<名前>` / `pull_request`）単位で行い、リポジトリ全体には許可しない。`sub` はオーナー・リポジトリに数値 ID が付いた形式（`repo:tsatolol@30972312/firebase_hosting_cicd_lab@1415534725:pull_request`）なので、principal はこの形式で組み立てる。
 
 ### GitHub Actions
 

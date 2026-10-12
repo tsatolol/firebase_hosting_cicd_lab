@@ -1,0 +1,329 @@
+name: terraform
+
+# infra/envs（stg / prod）の Terraform を実行する。
+# - PR: tf-plan SA で stg と prod の plan を実行し、結果を PR にコメントする
+# - main: tf-apply-stg で stg を apply → 承認（Environment infra-prod）→ tf-apply-prod で prod を apply
+# infra/bootstrap はここでは扱わない（ローカルでのみ apply する）。
+
+on:
+  pull_request:
+    paths:
+      - "infra/envs/**"
+      - "infra/modules/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/envs/**"
+      - "infra/modules/**"
+      - ".github/workflows/terraform.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TERRAFORM_VERSION: 1.16.5
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  plan:
+    name: plan (${{ matrix.env }})
+    # fork からの PR は OIDC トークンを取得できないためスキップする
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: stg
+            project_var: STG_PROJECT_ID
+          - env: prod
+            project_var: PROD_PROJECT_ID
+    concurrency:
+      group: terraform-plan-${{ github.event.pull_request.number }}-${{ matrix.env }}
+      cancel-in-progress: true
+    env:
+      TF_DIR: infra/envs/${{ matrix.env }}
+      TF_VAR_project_id: ${{ vars[matrix.project_var] }}
+      TF_VAR_workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      SERVICE_ACCOUNT: ${{ vars.TF_PLAN_SA }}
+    steps:
+      - name: Check variables
+        run: |
+          missing=()
+          for name in TF_VAR_project_id TF_VAR_workload_identity_provider TF_STATE_BUCKET SERVICE_ACCOUNT; do
+            [[ -n "${!name}" ]] || missing+=("$name")
+          done
+          if ((${#missing[@]})); then
+            echo "::error::GitHub Variables が未設定です（${missing[*]}）。docs/setup.md の手順 3-2 を確認してください。"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # WIF の紐付け（sub 単位）と照合できるよう、OIDC トークンのクレームを表示する
+      - name: Show OIDC token claims
+        run: scripts/show-oidc-claims.sh
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        id: auth
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.TF_PLAN_SA }}
+          # state の有無を確認するために、アクセストークンも出力する
+          token_format: access_token
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      # state がまだない（初回 apply 前の）環境では、GCS backend が init 時に空の state を書き込もうとして、
+      # 読み取り専用の tf-plan では失敗する。その場合はローカルの空の state に対して plan する（結果は同じ）。
+      - name: Check state exists
+        id: state
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          STATE_OBJECT: envs%2F${{ matrix.env }}%2Fdefault.tfstate
+        run: |
+          code="$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            "https://storage.googleapis.com/storage/v1/b/${TF_STATE_BUCKET}/o/${STATE_OBJECT}")"
+          case "$code" in
+            200) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            404)
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::${{ matrix.env }} の state はまだありません。空の state に対して plan します（初回のみ）。"
+              ;;
+            *)
+              echo "::error::state の確認に失敗しました（HTTP ${code}）"
+              exit 1
+              ;;
+          esac
+
+      - name: Terraform init
+        env:
+          STATE_EXISTS: ${{ steps.state.outputs.exists }}
+        run: |
+          if [[ "$STATE_EXISTS" == "true" ]]; then
+            terraform -chdir="$TF_DIR" init -backend-config="bucket=$TF_STATE_BUCKET" -lockfile=readonly
+          else
+            printf 'terraform {\n  backend "local" {}\n}\n' > "$TF_DIR/backend_override.tf"
+            terraform -chdir="$TF_DIR" init -lockfile=readonly
+          fi
+
+      # tf-plan は state の読み取りしかできないため、ロックを取らずに plan する
+      - name: Terraform plan
+        id: plan
+        run: |
+          set +e
+          terraform -chdir="$TF_DIR" plan -lock=false -no-color -detailed-exitcode > plan.txt 2>&1
+          code=$?
+          set -e
+          cat plan.txt
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Comment plan on PR
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PLAN_ENV: ${{ matrix.env }}
+          PLAN_EXITCODE: ${{ steps.plan.outputs.exitcode }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          STATE_EXISTS: ${{ steps.state.outputs.exists }}
+        with:
+          script: |
+            const fs = require("fs");
+            const { PLAN_ENV: env, PLAN_EXITCODE: code, HEAD_SHA: sha, STATE_EXISTS: stateExists } = process.env;
+            const status = { 0: "✅ 変更なし", 2: "📝 変更あり" }[code] ?? "❌ 失敗";
+            const marker = `<!-- terraform-plan:${env} -->`;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            // コメントの上限（65,536 文字）に収まるよう、長い場合は末尾（サマリー側）を残す
+            const MAX = 60000;
+            let plan = fs.readFileSync("plan.txt", "utf8").trim();
+            if (plan.length > MAX) plan = "…（先頭を省略）…\n" + plan.slice(-MAX);
+
+            const body = [
+              marker,
+              `### Terraform plan: \`${env}\` — ${status}`,
+              "",
+              `コミット: ${sha} ／ [ワークフローの実行](${runUrl})`,
+              ...(stateExists === "true" ? [] : ["", "> state がまだないため、空の state に対して plan しました（初回 apply 前）。"]),
+              "",
+              "<details><summary>plan の出力</summary>",
+              "",
+              "```text",
+              plan,
+              "```",
+              "</details>",
+            ].join("\n");
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
+            const existing = comments.find((c) => c.user?.type === "Bot" && c.body?.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Fail if plan failed
+        if: steps.plan.outputs.exitcode != '0' && steps.plan.outputs.exitcode != '2'
+        run: |
+          echo "::error::terraform plan が失敗しました（exit code: ${{ steps.plan.outputs.exitcode }}）"
+          exit 1
+
+  apply-stg:
+    name: apply (stg)
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: infra-stg
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: terraform-apply-stg
+      cancel-in-progress: false
+    env:
+      TF_DIR: infra/envs/stg
+    steps:
+      - name: Check variables
+        env:
+          TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+          TF_VAR_workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          SERVICE_ACCOUNT: ${{ vars.TF_APPLY_SA }}
+        run: |
+          missing=()
+          for name in TF_VAR_project_id TF_VAR_workload_identity_provider TF_STATE_BUCKET SERVICE_ACCOUNT; do
+            [[ -n "${!name}" ]] || missing+=("$name")
+          done
+          if ((${#missing[@]})); then
+            echo "::error::GitHub Variables が未設定です（${missing[*]}）。docs/setup.md の手順 3-2 を確認してください。"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # WIF の紐付け（sub 単位）と照合できるよう、OIDC トークンのクレームを表示する
+      - name: Show OIDC token claims
+        run: scripts/show-oidc-claims.sh
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.TF_APPLY_SA }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform -chdir="$TF_DIR" init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -lockfile=readonly
+
+      - name: Terraform plan
+        env:
+          TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+          TF_VAR_workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+        run: terraform -chdir="$TF_DIR" plan -no-color -out=tfplan
+
+      - name: Terraform apply
+        run: terraform -chdir="$TF_DIR" apply -no-color tfplan
+
+      - name: Summary
+        run: |
+          {
+            echo "### Terraform apply: \`stg\`"
+            echo ""
+            echo "| 出力 | 値 |"
+            echo "| --- | --- |"
+            echo "| deployer_service_account（Environment \`stg\` の \`DEPLOY_SA\` に登録） | \`$(terraform -chdir="$TF_DIR" output -raw deployer_service_account)\` |"
+            echo "| hosting_url | $(terraform -chdir="$TF_DIR" output -raw hosting_url) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  apply-prod:
+    name: apply (prod)
+    needs: apply-stg
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Required reviewers の承認を待ってから実行される
+    environment: infra-prod
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: terraform-apply-prod
+      cancel-in-progress: false
+    env:
+      TF_DIR: infra/envs/prod
+    steps:
+      - name: Check variables
+        env:
+          TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+          TF_VAR_workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          SERVICE_ACCOUNT: ${{ vars.TF_APPLY_SA }}
+        run: |
+          missing=()
+          for name in TF_VAR_project_id TF_VAR_workload_identity_provider TF_STATE_BUCKET SERVICE_ACCOUNT; do
+            [[ -n "${!name}" ]] || missing+=("$name")
+          done
+          if ((${#missing[@]})); then
+            echo "::error::GitHub Variables が未設定です（${missing[*]}）。docs/setup.md の手順 3-2 を確認してください。"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # WIF の紐付け（sub 単位）と照合できるよう、OIDC トークンのクレームを表示する
+      - name: Show OIDC token claims
+        run: scripts/show-oidc-claims.sh
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.TF_APPLY_SA }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform -chdir="$TF_DIR" init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -lockfile=readonly
+
+      - name: Terraform plan
+        env:
+          TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+          TF_VAR_workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+        run: terraform -chdir="$TF_DIR" plan -no-color -out=tfplan
+
+      - name: Terraform apply
+        run: terraform -chdir="$TF_DIR" apply -no-color tfplan
+
+      - name: Summary
+        run: |
+          {
+            echo "### Terraform apply: \`prod\`"
+            echo ""
+            echo "| 出力 | 値 |"
+            echo "| --- | --- |"
+            echo "| deployer_service_account（Environment \`prod\` の \`DEPLOY_SA\` に登録） | \`$(terraform -chdir="$TF_DIR" output -raw deployer_service_account)\` |"
+            echo "| hosting_url | $(terraform -chdir="$TF_DIR" output -raw hosting_url) |"
+          } >> "$GITHUB_STEP_SUMMARY"
