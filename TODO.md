@@ -118,7 +118,7 @@
   - [x] fork からの PR はスキップする
 - [x] 👤 PR の plan コメントを確認してマージする
 - [x] 👤 `infra-prod` の承認をする（※ 承認待ちにならずに実行されたため、`infra-prod` / `prod` の Required reviewers の設定を要確認）
-- [ ] 👤 出力された `deployer` SA を Environment `stg` / `prod` の `DEPLOY_SA` に登録する（apply ジョブのサマリーに表示される）
+- [x] 👤 出力された `deployer` SA を Environment `stg` / `prod` の `DEPLOY_SA` に登録する（apply ジョブのサマリーに表示される）
 
 **完了条件**: stg / prod で Firebase と Hosting サイトが作成され、`terraform.yml` の plan と apply が成功している。
 
@@ -137,7 +137,7 @@
   - [x] タグ push と `workflow_dispatch`（入力 `tag`）
   - [x] タグが `main` 上のコミットであることを確認する
   - [x] Environment `prod`（承認）→ デプロイ → スモークテスト
-- [ ] 👤 この PR 自体でプレビューがデプロイされ、URL がコメントされることを確認してマージする
+- [x] 👤 この PR 自体でプレビューがデプロイされ、URL がコメントされることを確認してマージする
 
 **完了条件**: この PR でプレビューが動き、マージ後に stg へデプロイされてスモークテストが成功している。
 
@@ -147,20 +147,20 @@
 
 ## フェーズ 6: 動作確認シナリオ（`docs/spec.md` §10）
 
-- [ ] ページを変更する PR → lint・テスト・プレビュー URL のコメントを確認する
-- [ ] マージ → stg に反映され、スモークテストが成功する
-- [ ] `v1.0.0` タグを push → 承認 → prod に反映される
-- [ ] 変更して `v1.1.0` をリリース → `workflow_dispatch` で `v1.0.0` を指定してロールバックする
-- [ ] 異常系: lint エラーの PR で `ci` が失敗する
-- [ ] 異常系: `main` 上にないコミットへのタグで prod デプロイが失敗する
-- [ ] 異常系: fork からの PR でプレビューと plan がスキップされる（任意）
-- [ ] 🤖 結果を `docs/verification.md` に記録する（実行した Actions のリンク、気づいた点）
+- [x] ページを変更する PR → lint・テスト・プレビュー URL のコメントを確認する
+- [x] マージ → stg に反映され、スモークテストが成功する
+- [x] `v1.0.0` タグを push → 承認 → prod に反映される
+- [x] 変更して `v1.1.0` をリリース → `workflow_dispatch` で `v1.0.0` を指定してロールバックする
+- [x] 異常系: lint エラーの PR で `ci` が失敗する
+- [x] 異常系: `main` 上にないコミットへのタグで prod デプロイが失敗する
+- [ ] 異常系: fork からの PR でプレビューと plan がスキップされる（任意。未実施）
+- [x] 🤖 結果を `docs/verification.md` に記録する（実行した Actions のリンク、気づいた点）
 
 **完了条件**: すべてのシナリオが想定どおりに動く。
 
 ---
 
-## フェーズ 7: 仕上げ（PR #5）
+## フェーズ 7: 仕上げ
 
 - [ ] 🤖 `README.md`（概要、構成図、各ドキュメントへのリンク）
 - [ ] 🤖 `docs/setup.md` に後片付けの手順を追加する（`deletion_policy` の解除 → `terraform destroy` → プロジェクトの削除）
