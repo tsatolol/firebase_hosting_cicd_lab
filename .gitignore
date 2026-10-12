@@ -1,0 +1,21 @@
+# Node
+node_modules/
+coverage/
+
+# Build output
+dist/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# Firebase
+.firebase/
+firebase-debug.log
+
+# OS
+.DS_Store

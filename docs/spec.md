@@ -1,6 +1,6 @@
 # Firebase Hosting CI/CD ラボ 仕様書
 
-- ステータス: ドラフト v0.1（2026-10-12）
+- ステータス: v0.2（2026-10-12、未決事項を決定）
 - リポジトリ: `tsatolol/firebase_hosting_cicd_lab`（public）
 
 ## 1. 目的
@@ -33,6 +33,10 @@ Google Cloud（Firebase Hosting）と GitHub Actions を使い、単一の HTML 
 | プロジェクト ID | `fhcl-<env>-<乱数4桁>`（例: `fhcl-stg-a1b2`） |
 | リージョン | `asia-northeast1` |
 | 課金アカウント | 変数で渡す（コードに書かない） |
+| プレビューの有効期限 | 7 日（PR を更新するたびに延長される） |
+| 失敗時の通知 | GitHub の標準通知のみ |
+| GitHub Release | 自動作成しない（デプロイ履歴は GitHub Environments で確認する） |
+| Terraform 用 SA の権限 | `roles/owner` のまま（§7.2 の理由を参照） |
 
 ## 3. 全体アーキテクチャ
 
@@ -86,7 +90,7 @@ flowchart LR
 
 | 項目 | 内容 |
 | --- | --- |
-| 環境バッジ | `stg` / `prod` / `preview` を表示し、環境ごとに色を変える（例: prod=緑、stg=橙、preview=紫） |
+| 環境バッジ | `prod` / `stg` / `preview` / `local` を表示し、環境ごとに色を変える（prod=緑、stg=橙、preview=紫、local=青）。未設定や未知の値は `UNKNOWN`（灰色） |
 | バージョン | prod: タグ名（`v1.2.3`）、stg: `main-<短縮SHA>`、preview: `pr-<番号>-<短縮SHA>` |
 | コミット SHA | 短縮表示し、GitHub のコミットページへリンクする |
 | デプロイ日時 | ISO 8601（UTC）で埋め込み、JS で閲覧者のローカル時刻と「◯分前」に整形して表示する |
@@ -104,6 +108,9 @@ flowchart LR
   ```
 
 - ビルドは `scripts/build.sh` で行う（`src/` を `dist/` にコピーして `sed` で置換するだけ）。プレースホルダーが残った場合はエラーにする。
+  - 値は環境変数 `APP_ENV` / `APP_VERSION` / `COMMIT_SHA` / `DEPLOYED_AT` で渡す。省略時はローカル用の値（`local` / `dev` / `git rev-parse HEAD` / 現在時刻）になる。
+  - HTML への埋め込みを安全にするため、各値は形式を検証し、想定外の文字を含む場合はビルドを失敗させる。
+- 置換前の `src/index.html` をそのまま開いた場合は、各項目を「未設定」と表示する。
 - ソースは全環境で同一で、ビルド時に注入する値だけが異なる。
 
 ### 4.3 JS の構成（テスト容易性）
@@ -123,10 +130,10 @@ flowchart LR
 | HTML lint | HTMLHint | `src/index.html` |
 | CSS lint | Stylelint ＋ `postcss-html` | `index.html` 内の `<style>` |
 | JS lint | ESLint（flat config）＋ `eslint-plugin-html` | `index.html` 内の `<script>` |
-| 単体テスト | Vitest ＋ jsdom | `index.html` を jsdom で読み込み、`window.App` の関数と初期化後の DOM を検証する |
+| 単体テスト | Vitest ＋ jsdom | `index.html` を jsdom で読み込み、`window.App` の関数と初期化後の DOM を検証する。`build.sh` と `smoke-test.sh` も Vitest から実行して検証する |
 | スモークテスト | `scripts/smoke-test.sh`（curl） | デプロイ後の URL が HTTP 200 を返し、`data-commit` が今回のコミット SHA と一致すること（リトライあり） |
 
-- Node.js は実装時点の Active LTS を使い、`.nvmrc` で固定する。
+- Node.js は Active LTS（24）を使い、`.nvmrc` で固定する。
 - `npm run lint` / `npm test` / `npm run build` をローカルと CI で共通に使う。
 
 ## 6. GitHub Actions ワークフロー
@@ -205,7 +212,7 @@ infra/
    - `tf-plan`: stg / prod に `roles/viewer` と `roles/iam.securityReviewer`。state バケットに読み取り権限
    - `tf-apply-stg`: stg に `roles/owner`。state バケットの `envs/stg/` に書き込み権限
    - `tf-apply-prod`: prod に `roles/owner`。state バケットの `envs/prod/` に書き込み権限
-   - ※ ラボ用途のため owner を使う。最小権限への絞り込みは今後の課題
+   - owner を使う理由: この SA は IAM も管理するため IAM の変更権限が必須で、それがあれば自分に owner を付け直せる。権限を絞っても安全性はあまり上がらない。代わりに、使えるジョブを Environment（`infra-prod` は承認必須）で限定し、権限の範囲を 1 プロジェクトに限ることでリスクを抑える
 7. Workload Identity 連携の紐付け（`roles/iam.workloadIdentityUser`、subject 単位で制限）
    - `tf-plan` ← `repo:tsatolol/firebase_hosting_cicd_lab:pull_request`
    - `tf-apply-stg` ← `repo:tsatolol/firebase_hosting_cicd_lab:environment:infra-stg`
@@ -291,7 +298,4 @@ firebase.json, package.json, eslint.config.js, .stylelintrc.json, .htmlhintrc, .
 
 ## 12. 未決事項
 
-- [ ] プレビューチャネルの有効期限（案: 7 日）
-- [ ] デプロイ失敗時の通知方法（案: GitHub の標準通知のみ）
-- [ ] prod デプロイ後に GitHub Release を自動作成するか
-- [ ] Terraform 用 SA の権限を owner から絞り込むか
+なし（v0.2 ですべて決定し、§2 に反映済み）。

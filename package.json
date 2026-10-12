@@ -1,0 +1,29 @@
+{
+  "name": "firebase-hosting-cicd-lab",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "lint": "npm run lint:html && npm run lint:css && npm run lint:js",
+    "lint:html": "htmlhint \"src/**/*.html\"",
+    "lint:css": "stylelint \"src/**/*.html\"",
+    "lint:js": "eslint .",
+    "test": "vitest run",
+    "build": "bash scripts/build.sh"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.12.0",
+    "eslint-plugin-html": "8.2.1",
+    "globals": "17.13.0",
+    "htmlhint": "1.9.2",
+    "jsdom": "29.1.1",
+    "postcss-html": "2.0.0",
+    "stylelint": "17.16.0",
+    "stylelint-config-standard": "40.0.0",
+    "vitest": "5.0.4"
+  }
+}
