@@ -143,9 +143,11 @@ flowchart LR
 | ファイル | トリガー | 内容 |
 | --- | --- | --- |
 | `ci.yml` | `pull_request`, `push: main` | lint、単体テスト、ビルド確認 |
-| `preview.yml` | `pull_request`（同一リポジトリからの PR のみ） | stg プロジェクトのプレビューチャネル `pr-<番号>` へデプロイ（有効期限 7 日）、スモークテスト、PR に URL をコメント |
-| `deploy-stg.yml` | `push: main`（`src/**` などアプリ関連のパス） | lint・テスト → stg の live チャネルへデプロイ → スモークテスト |
-| `deploy-prod.yml` | `push: tags v*.*.*`、`workflow_dispatch`（入力: `tag`） | タグが `main` に含まれることを確認 → lint・テスト → **承認待ち** → prod へデプロイ → スモークテスト |
+| `preview.yml` | `pull_request`（同一リポジトリからの PR で、アプリ関連のパスが変わったとき） | stg プロジェクトのプレビューチャネル `pr-<番号>` へデプロイ（有効期限 7 日）、スモークテスト、PR に URL をコメント（2 回目以降は同じコメントを更新） |
+| `deploy-stg.yml` | `push: main`（アプリ関連のパス）、`workflow_dispatch` | lint・テスト → stg の live チャネルへデプロイ → スモークテスト |
+| `deploy-prod.yml` | `push: tags v*.*.*`、`workflow_dispatch`（入力: `tag`） | タグの形式と、タグが `main` に含まれることを確認 → lint・テスト → **承認待ち** → prod へデプロイ → スモークテスト |
+
+アプリ関連のパス: `src/**`、`scripts/**`、`firebase.json`、`package.json`、`package-lock.json`、`.nvmrc`、`.github/actions/deploy/**`、各ワークフロー自身。
 | `terraform.yml` | `pull_request` / `push: main`（`infra/envs/**` と `infra/modules/**`） | PR: stg・prod の plan を PR にコメント。main: stg を apply → **承認待ち** → prod を apply |
 
 ### 6.2 デプロイの方法
@@ -153,7 +155,12 @@ flowchart LR
 - `google-github-actions/auth` で Workload Identity 連携の認証を行い、資格情報ファイル（ADC）を生成する。
 - `firebase-tools`（npm の devDependencies にバージョンを固定）で直接デプロイする。
   - live: `firebase deploy --only hosting --project $PROJECT_ID`
-  - preview: `firebase hosting:channel:deploy pr-<番号> --expires 7d --project $PROJECT_ID --json`
+  - preview: `firebase hosting:channel:deploy pr-<番号> --expires 7d --project $PROJECT_ID --no-authorized-domains --json`（このページは Firebase Auth を使わないため、Auth の承認済みドメインへの登録はしない）
+- ビルド → 認証 → デプロイ → スモークテストは、3 つのワークフローで共通の composite action（`.github/actions/deploy/`）にまとめる。
+- デプロイに使う SA:
+  - stg / prod: Environment の Variable `DEPLOY_SA`
+  - preview: PR のジョブは Environment を使わないため、`deployer@<STG_PROJECT_ID>.iam.gserviceaccount.com` を組み立てて使う（`account_id` は Terraform で `deployer` に固定）
+- デプロイジョブには `environment.url` を設定し、Actions の画面と Environment のデプロイ履歴に URL を表示する。
 - `FirebaseExtended/action-hosting-deploy` はサービスアカウントキー（JSON）が前提のため使わない。PR へのコメントは `actions/github-script` で行う。
 - 外部アクションはコミット SHA で固定する。
 - ワークフローの `permissions` は最小限にし、OIDC を使うジョブだけに `id-token: write` を付ける。
@@ -161,7 +168,7 @@ flowchart LR
 ### 6.3 prod デプロイとロールバック
 
 - タグ push 時は、`git merge-base --is-ancestor <tag の SHA> origin/main` でタグが main 上のコミットであることを検証する。
-- ロールバックは、`main` 上の `deploy-prod.yml` を `workflow_dispatch` で実行し、入力 `tag` に旧タグ（例: `v1.0.0`）を指定する。旧タグをチェックアウトしてビルド・デプロイする（通常時と同じく承認が必要）。
+- ロールバックは、`main` 上の `deploy-prod.yml` を `workflow_dispatch` で実行し、入力 `tag` に旧タグ（例: `v1.0.0`）を指定する。旧タグのコミットをチェックアウトしてビルド・デプロイする（通常時と同じく承認が必要）。このとき使われる deploy アクションも旧タグ時点のもの。
 - 同時実行は `concurrency: deploy-<env>` で直列化し、進行中のジョブはキャンセルしない。
 
 ### 6.4 GitHub リポジトリ設定（手動）
