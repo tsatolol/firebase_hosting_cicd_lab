@@ -162,9 +162,19 @@
 
 ## フェーズ 7: 仕上げ
 
-- [ ] 🤖 `README.md`（概要、構成図、各ドキュメントへのリンク）
-- [ ] 🤖 `docs/setup.md` に後片付けの手順を追加する（`deletion_policy` の解除 → `terraform destroy` → プロジェクトの削除）
-- [ ] 🤖 `docs/spec.md` と `CLAUDE.md` を実装に合わせて更新する（検証で変わった点を反映する）
-- [ ] 🤖 `TODO.md` を完了状態にする、または削除する
+- [x] 🤖 `README.md`（概要、構成図、各ドキュメントへのリンク）
+- [x] 🤖 `docs/setup.md` に後片付けの手順を追加する（Terraform の destroy ではなく、プロジェクトごと削除する手順にした）
+- [x] 🤖 `docs/spec.md` と `CLAUDE.md` を実装に合わせて更新する（検証で変わった点を反映する）
+- [x] 🤖 `TODO.md` を完了状態にする（記録として残す）
 
 **完了条件**: 初めて見る人が README から構成を理解し、セットアップと後片付けができる。
+
+---
+
+## 残っている事項
+
+`docs/spec.md` §12 の未決事項を参照。
+
+- [ ] プレビューを `ci` の成功後にだけデプロイするか
+- [ ] Environment `infra-prod` の Required reviewers の再確認
+- [ ] （任意）fork からの PR でプレビューと plan がスキップされることの確認

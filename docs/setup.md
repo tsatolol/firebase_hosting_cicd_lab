@@ -1,6 +1,6 @@
 # セットアップ手順
 
-GCP の土台（`infra/bootstrap`）を手元から作成し、GitHub 側を設定するまでの手順。`TODO.md` のフェーズ 3 で実施する。
+GCP の土台（`infra/bootstrap`）を手元から作成し、GitHub 側を設定するまでの手順と、検証を終えるときの後片付けの手順（6 章）。
 
 所要時間の目安: 30〜60 分
 
@@ -192,6 +192,45 @@ terraform apply
 ```
 
 `infra/bootstrap` は CI からは実行しない（ローカルでのみ apply する）。
+
+## 6. 後片付け（検証を終えるとき）
+
+GCP のプロジェクトを削除すると、その中のもの（Firebase Hosting、サービスアカウント、Workload Identity Pool、state バケット）はまとめて消える。Terraform の `destroy` は使わない（プロジェクトや prod の Hosting サイトに削除保護が付いているうえ、bootstrap の state 自体が削除対象のバケットにあるため）。
+
+### 6-1. GCP のプロジェクトを削除する
+
+```sh
+gcloud auth login
+
+# 3 つのプロジェクトを削除する（ID は環境に合わせる）
+gcloud projects delete fhcl-stg-xxxx
+gcloud projects delete fhcl-prod-xxxx
+gcloud projects delete fhcl-admin-xxxx
+```
+
+- 削除したプロジェクトは課金が止まり、30 日後に完全に消える。それまでは `gcloud projects undelete <ID>` で元に戻せる。
+- 同じプロジェクト ID は二度と使えない。もう一度セットアップするときは、bootstrap が別のサフィックスで作り直す（手元の `terraform.tfstate` や `backend.tfbackend` は削除しておく）。
+
+### 6-2. GitHub 側の設定を消す（任意）
+
+リポジトリを残す場合でも、GCP がなくなるとデプロイ系のワークフローは失敗するようになる。必要に応じて次を消す。
+
+| 対象 | 場所 |
+| --- | --- |
+| Environments（`stg` / `prod` / `infra-stg` / `infra-prod`） | Settings → Environments |
+| Variables（Repository の 5 つ） | Settings → Secrets and variables → Actions → Variables |
+| ルールセット（`main` / `release-tags`） | Settings → Rules → Rulesets |
+| タグ（`v1.0.0` など） | `git push origin :refs/tags/v1.0.0`（`release-tags` のルールセットを消すか、管理者として実行する） |
+
+ワークフローだけ止めたい場合は、Actions の画面で各ワークフローを **Disable workflow** にする。
+
+### 6-3. 手元の後片付け
+
+```sh
+cd infra/bootstrap
+rm -rf .terraform terraform.tfvars backend.tfbackend
+gcloud auth application-default revoke   # Terraform 用の ADC を削除する
+```
 
 ## トラブルシューティング
 

@@ -4,6 +4,8 @@ Firebase Hosting と GitHub Actions で、単一の HTML ページを stg / prod
 
 設計の詳細と決定の理由は `docs/spec.md` にある。仕様に関わる変更をするときは先に読み、決定事項が変わったら spec.md も更新すること。
 
+その他のドキュメント: `README.md`（概要と使い方）、`docs/setup.md`（セットアップと後片付け）、`docs/verification.md`（動作確認の結果と分かったこと）、`TODO.md`（実行計画と進捗）。
+
 ## 構成
 
 - `src/index.html` — 配信するページ。CSS/JS はこのファイルに内包する（外部ファイルに分けない）
@@ -34,6 +36,8 @@ Terraform（envs）は CI で実行する。ローカルで確認するときは
 | preview | `fhcl-stg-xxxx` のチャネル `pr-<番号>` | 同一リポジトリからの PR |
 | stg | `fhcl-stg-xxxx` | `main` への push |
 | prod | `fhcl-prod-xxxx` | `v*.*.*` タグ push ＋ 承認。ロールバックは `workflow_dispatch` で旧タグを指定 |
+
+Claude Code（Web 版）の環境からは作業ブランチ以外に push できないため、タグの push と承認は人が行う。Claude はワークフローの手動実行（ロールバック）と結果の確認までを行える。
 
 ## ルール
 
