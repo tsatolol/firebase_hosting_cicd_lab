@@ -9,7 +9,7 @@ Firebase Hosting と GitHub Actions で、単一の HTML ページを stg / prod
 - `src/index.html` — 配信するページ。CSS/JS はこのファイルに内包する（外部ファイルに分けない）
 - `scripts/build.sh` — `src/` を `dist/` にコピーし、`__APP_ENV__` などのプレースホルダーを置換する
 - `scripts/smoke-test.sh` — デプロイ後の URL の HTTP 200 と `data-commit` の一致を確認する
-- `tests/` — Vitest + jsdom による単体テスト
+- `tests/` — Vitest + jsdom による単体テスト（`index.test.js`: ページ、`scripts.test.js`: build / smoke-test スクリプト）
 - `infra/bootstrap/` — プロジェクト・state バケット・WIF・Terraform 用 SA。**ローカルでのみ apply する**
 - `infra/modules/hosting-env/`, `infra/envs/{stg,prod}/` — Firebase / Hosting サイト / デプロイ用 SA。GitHub Actions で apply する
 - `.github/workflows/` — `ci`, `preview`, `deploy-stg`, `deploy-prod`, `terraform`
@@ -20,7 +20,7 @@ Firebase Hosting と GitHub Actions で、単一の HTML ページを stg / prod
 npm ci
 npm run lint     # HTMLHint / Stylelint(postcss-html) / ESLint(eslint-plugin-html)
 npm test         # Vitest
-npm run build    # dist/index.html を生成
+npm run build    # dist/index.html を生成（APP_ENV などの環境変数で値を指定。省略時は local 用）
 ```
 
 Terraform（envs）は CI で実行する。ローカルで確認するときは `terraform fmt -check -recursive infra` と `terraform validate` まで。

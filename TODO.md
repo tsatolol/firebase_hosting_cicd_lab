@@ -41,21 +41,21 @@
 
 ## フェーズ 1: ページ・lint・テスト・ビルド（PR #1）
 
-- [ ] 🤖 `package.json`（scripts: `lint`, `test`, `build`）、`.nvmrc`、`.gitignore`（`node_modules/`, `dist/`, `*.tfstate*`, `*.tfvars`, `.terraform/`）
-- [ ] 🤖 `src/index.html`
-  - [ ] `<body data-env data-version data-commit data-deployed-at>` にプレースホルダーを置く
-  - [ ] 環境バッジ（色分け）、バージョン、コミットへのリンク、デプロイ日時（ローカル時刻＋「◯分前」）
-  - [ ] 「デプロイ情報をコピー」ボタン
-  - [ ] ロジックを `window.App` に公開（`formatRelativeTime`, `envTheme`, `buildDeployInfo` など）
-- [ ] 🤖 lint の設定: `.htmlhintrc`、`.stylelintrc.json`（postcss-html）、`eslint.config.js`（eslint-plugin-html）
-- [ ] 🤖 `tests/index.test.js`（Vitest ＋ jsdom）
-  - [ ] 純粋関数の単体テスト
-  - [ ] 初期化後の DOM（バッジ・表示値）の検証
-- [ ] 🤖 `scripts/build.sh`: 環境変数から値を受け取って置換し、プレースホルダーが残っていたら失敗する
-- [ ] 🤖 `scripts/smoke-test.sh`: URL と期待する SHA を受け取り、リトライ付きで HTTP 200 と `data-commit` を確認する
-- [ ] 🤖 `firebase.json`（`public: dist`、`index.html` に `Cache-Control: no-cache`）
-- [ ] 🤖 `.github/workflows/ci.yml`（lint / test / build。アクションは SHA で固定）
-- [ ] 🤖 ローカルで `npm run lint && npm test && npm run build` が通ることを確認する
+- [x] 🤖 `package.json`（scripts: `lint`, `test`, `build`）、`.nvmrc`、`.gitignore`（`node_modules/`, `dist/`, `*.tfstate*`, `*.tfvars`, `.terraform/`）
+- [x] 🤖 `src/index.html`
+  - [x] `<body data-env data-version data-commit data-deployed-at>` にプレースホルダーを置く
+  - [x] 環境バッジ（色分け）、バージョン、コミットへのリンク、デプロイ日時（ローカル時刻＋「◯分前」）
+  - [x] 「デプロイ情報をコピー」ボタン
+  - [x] ロジックを `window.App` に公開（`formatRelativeTime`, `envTheme`, `buildDeployInfo` など）
+- [x] 🤖 lint の設定: `.htmlhintrc`、`.stylelintrc.json`（postcss-html）、`eslint.config.js`（eslint-plugin-html）
+- [x] 🤖 `tests/index.test.js`（Vitest ＋ jsdom）
+  - [x] 純粋関数の単体テスト
+  - [x] 初期化後の DOM（バッジ・表示値）の検証
+- [x] 🤖 `scripts/build.sh`: 環境変数から値を受け取って置換し、プレースホルダーが残っていたら失敗する
+- [x] 🤖 `scripts/smoke-test.sh`: URL と期待する SHA を受け取り、リトライ付きで HTTP 200 と `data-commit` を確認する
+- [x] 🤖 `firebase.json`（`public: dist`、`index.html` に `Cache-Control: no-cache`）
+- [x] 🤖 `.github/workflows/ci.yml`（lint / test / build。アクションは SHA で固定）
+- [x] 🤖 ローカルで `npm run lint && npm test && npm run build` が通ることを確認する
 - [ ] 👤 PR をレビューしてマージする
 
 **完了条件**: PR 上で `ci` が成功し、`main` にマージされている。

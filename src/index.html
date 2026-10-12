@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deploy Info | Firebase Hosting CI/CD Lab</title>
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --card-bg: #fff;
+      --text: #1f2328;
+      --muted: #59636e;
+      --border: #d1d9e0;
+      --accent: #0969da;
+      --env-color: #6e7781;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --card-bg: #161b22;
+        --text: #e6edf3;
+        --muted: #9198a1;
+        --border: #3d444d;
+        --accent: #4493f8;
+      }
+    }
+
+    body.env-prod { --env-color: #1a7f37; }
+    body.env-stg { --env-color: #bc4c00; }
+    body.env-preview { --env-color: #8250df; }
+    body.env-local { --env-color: #0969da; }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+      border-top: 8px solid var(--env-color);
+    }
+
+    .card {
+      width: 100%;
+      max-width: 560px;
+      padding: 24px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.25rem;
+    }
+
+    .badge {
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--env-color);
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+
+    dl {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: 10px 16px;
+      margin: 0 0 24px;
+    }
+
+    dt { color: var(--muted); }
+
+    dd {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    a { color: var(--accent); }
+
+    .muted { color: var(--muted); }
+
+    button {
+      padding: 8px 16px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button:hover { border-color: var(--accent); }
+
+    .status {
+      min-height: 1.5em;
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.875rem;
+    }
+  </style>
+</head>
+<body data-env="__APP_ENV__" data-version="__APP_VERSION__" data-commit="__COMMIT_SHA__" data-deployed-at="__DEPLOYED_AT__">
+  <main class="card">
+    <div class="card-header">
+      <h1>Firebase Hosting CI/CD Lab</h1>
+      <span id="env-badge" class="badge">UNKNOWN</span>
+    </div>
+    <dl>
+      <dt>環境</dt>
+      <dd id="env">-</dd>
+      <dt>バージョン</dt>
+      <dd><code id="version">-</code></dd>
+      <dt>コミット</dt>
+      <dd><code><a id="commit" href="#">-</a></code></dd>
+      <dt>デプロイ日時</dt>
+      <dd><time id="deployed-at">-</time><span id="deployed-ago" class="muted"></span></dd>
+    </dl>
+    <button id="copy-button" type="button">デプロイ情報をコピー</button>
+    <p id="copy-status" class="status" role="status" aria-live="polite"></p>
+  </main>
+
+  <script>
+    (function () {
+      "use strict";
+
+      const REPO_URL = "https://github.com/tsatolol/firebase_hosting_cicd_lab";
+      const THEMES = {
+        prod: { label: "PRODUCTION", className: "env-prod" },
+        stg: { label: "STAGING", className: "env-stg" },
+        preview: { label: "PREVIEW", className: "env-preview" },
+        local: { label: "LOCAL", className: "env-local" }
+      };
+      const UNKNOWN_THEME = { label: "UNKNOWN", className: "env-unknown" };
+
+      // ビルドで置換されていない値（__XXX__）や空文字は「未設定」として扱う
+      function isUnset(value) {
+        return typeof value !== "string" || value === "" || /^__[A-Z_]+__$/.test(value);
+      }
+
+      function envTheme(env) {
+        return Object.prototype.hasOwnProperty.call(THEMES, env) ? THEMES[env] : UNKNOWN_THEME;
+      }
+
+      function commitUrl(sha) {
+        return /^[0-9a-f]{7,40}$/.test(sha) ? REPO_URL + "/commit/" + sha : null;
+      }
+
+      function buildDeployInfo(dataset) {
+        function pick(key) {
+          return isUnset(dataset[key]) ? null : dataset[key];
+        }
+        return {
+          env: pick("env"),
+          version: pick("version"),
+          commit: pick("commit"),
+          deployedAt: pick("deployedAt")
+        };
+      }
+
+      function formatRelativeTime(iso, now) {
+        const time = Date.parse(iso);
+        if (isNaN(time)) {
+          return "";
+        }
+        const seconds = Math.floor((now.getTime() - time) / 1000);
+        if (seconds < 60) {
+          return "たった今";
+        }
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) {
+          return minutes + " 分前";
+        }
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) {
+          return hours + " 時間前";
+        }
+        return Math.floor(hours / 24) + " 日前";
+      }
+
+      function formatDateTime(iso, timeZone) {
+        const time = Date.parse(iso);
+        if (isNaN(time)) {
+          return "";
+        }
+        return new Intl.DateTimeFormat("ja-JP", {
+          dateStyle: "medium",
+          timeStyle: "medium",
+          timeZone: timeZone
+        }).format(new Date(time));
+      }
+
+      function renderRelativeTime(doc, info, now) {
+        const text = info.deployedAt ? formatRelativeTime(info.deployedAt, now) : "";
+        doc.getElementById("deployed-ago").textContent = text ? "（" + text + "）" : "";
+      }
+
+      function render(doc, info, now) {
+        const theme = envTheme(info.env);
+        doc.body.classList.add(theme.className);
+        doc.getElementById("env-badge").textContent = theme.label;
+        doc.getElementById("env").textContent = info.env || "未設定";
+        doc.getElementById("version").textContent = info.version || "未設定";
+
+        const commitLink = doc.getElementById("commit");
+        const url = info.commit ? commitUrl(info.commit) : null;
+        commitLink.textContent = info.commit ? info.commit.slice(0, 7) : "未設定";
+        if (url) {
+          commitLink.href = url;
+        } else {
+          commitLink.removeAttribute("href");
+        }
+
+        const deployedAt = doc.getElementById("deployed-at");
+        deployedAt.textContent = (info.deployedAt && formatDateTime(info.deployedAt)) || "未設定";
+        if (info.deployedAt) {
+          deployedAt.setAttribute("datetime", info.deployedAt);
+        }
+        renderRelativeTime(doc, info, now);
+      }
+
+      function copyDeployInfo(doc, info, clipboard) {
+        const status = doc.getElementById("copy-status");
+        if (!clipboard || typeof clipboard.writeText !== "function") {
+          status.textContent = "このブラウザではコピーできません";
+          return Promise.resolve(false);
+        }
+        return clipboard.writeText(JSON.stringify(info, null, 2)).then(
+          function () {
+            status.textContent = "コピーしました";
+            return true;
+          },
+          function () {
+            status.textContent = "コピーできませんでした";
+            return false;
+          }
+        );
+      }
+
+      function init() {
+        const info = buildDeployInfo(document.body.dataset);
+        render(document, info, new Date());
+        document.getElementById("copy-button").addEventListener("click", function () {
+          copyDeployInfo(document, info, navigator.clipboard);
+        });
+        setInterval(function () {
+          renderRelativeTime(document, info, new Date());
+        }, 60 * 1000);
+      }
+
+      window.App = {
+        isUnset: isUnset,
+        envTheme: envTheme,
+        commitUrl: commitUrl,
+        buildDeployInfo: buildDeployInfo,
+        formatRelativeTime: formatRelativeTime,
+        formatDateTime: formatDateTime,
+        render: render,
+        copyDeployInfo: copyDeployInfo
+      };
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", init);
+      } else {
+        init();
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -90,7 +90,7 @@ flowchart LR
 
 | 項目 | 内容 |
 | --- | --- |
-| 環境バッジ | `stg` / `prod` / `preview` を表示し、環境ごとに色を変える（例: prod=緑、stg=橙、preview=紫） |
+| 環境バッジ | `prod` / `stg` / `preview` / `local` を表示し、環境ごとに色を変える（prod=緑、stg=橙、preview=紫、local=青）。未設定や未知の値は `UNKNOWN`（灰色） |
 | バージョン | prod: タグ名（`v1.2.3`）、stg: `main-<短縮SHA>`、preview: `pr-<番号>-<短縮SHA>` |
 | コミット SHA | 短縮表示し、GitHub のコミットページへリンクする |
 | デプロイ日時 | ISO 8601（UTC）で埋め込み、JS で閲覧者のローカル時刻と「◯分前」に整形して表示する |
@@ -108,6 +108,9 @@ flowchart LR
   ```
 
 - ビルドは `scripts/build.sh` で行う（`src/` を `dist/` にコピーして `sed` で置換するだけ）。プレースホルダーが残った場合はエラーにする。
+  - 値は環境変数 `APP_ENV` / `APP_VERSION` / `COMMIT_SHA` / `DEPLOYED_AT` で渡す。省略時はローカル用の値（`local` / `dev` / `git rev-parse HEAD` / 現在時刻）になる。
+  - HTML への埋め込みを安全にするため、各値は形式を検証し、想定外の文字を含む場合はビルドを失敗させる。
+- 置換前の `src/index.html` をそのまま開いた場合は、各項目を「未設定」と表示する。
 - ソースは全環境で同一で、ビルド時に注入する値だけが異なる。
 
 ### 4.3 JS の構成（テスト容易性）
@@ -127,10 +130,10 @@ flowchart LR
 | HTML lint | HTMLHint | `src/index.html` |
 | CSS lint | Stylelint ＋ `postcss-html` | `index.html` 内の `<style>` |
 | JS lint | ESLint（flat config）＋ `eslint-plugin-html` | `index.html` 内の `<script>` |
-| 単体テスト | Vitest ＋ jsdom | `index.html` を jsdom で読み込み、`window.App` の関数と初期化後の DOM を検証する |
+| 単体テスト | Vitest ＋ jsdom | `index.html` を jsdom で読み込み、`window.App` の関数と初期化後の DOM を検証する。`build.sh` と `smoke-test.sh` も Vitest から実行して検証する |
 | スモークテスト | `scripts/smoke-test.sh`（curl） | デプロイ後の URL が HTTP 200 を返し、`data-commit` が今回のコミット SHA と一致すること（リトライあり） |
 
-- Node.js は実装時点の Active LTS を使い、`.nvmrc` で固定する。
+- Node.js は Active LTS（24）を使い、`.nvmrc` で固定する。
 - `npm run lint` / `npm test` / `npm run build` をローカルと CI で共通に使う。
 
 ## 6. GitHub Actions ワークフロー
