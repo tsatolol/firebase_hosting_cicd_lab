@@ -1,0 +1,120 @@
+name: deploy-prod
+
+# v*.*.* タグの push で、承認（Environment prod の Required reviewers）を経て prod の live チャネルにデプロイする。
+# ロールバック: main から workflow_dispatch で実行し、入力 tag に旧タグ（例: v1.0.0）を指定する。
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "デプロイするタグ（例: v1.0.0）。ロールバックにも使う"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: verify tag / lint / test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      sha: ${{ steps.tag.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # タグが main の履歴に含まれるかを調べるため、全履歴とタグを取得する
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Verify tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            tag="$INPUT_TAG"
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::タグの形式が不正です: '$tag'（vX.Y.Z の形式）"
+            exit 1
+          fi
+          if ! sha="$(git rev-list -n 1 "refs/tags/$tag" 2>/dev/null)"; then
+            echo "::error::タグ $tag が見つかりません"
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$sha" origin/main; then
+            echo "::error::タグ $tag（$sha）は main の履歴に含まれていません。main にマージ済みのコミットにだけタグを付けてください。"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "deploy: $tag ($sha)"
+
+      - name: Checkout tag
+        run: git checkout --quiet "${{ steps.tag.outputs.sha }}"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+  deploy:
+    name: deploy (prod)
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Required reviewers の承認を待ってから実行される
+    environment:
+      name: prod
+      url: ${{ steps.deploy.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    steps:
+      - name: Check variables
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          DEPLOY_SA: ${{ vars.DEPLOY_SA }}
+          GCP_WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+        run: |
+          missing=()
+          for name in GCP_PROJECT_ID DEPLOY_SA GCP_WIF_PROVIDER; do
+            [[ -n "${!name}" ]] || missing+=("$name")
+          done
+          if ((${#missing[@]})); then
+            echo "::error::GitHub Variables が未設定です（${missing[*]}）。docs/setup.md の手順 3-2 と 4 を確認してください。"
+            exit 1
+          fi
+
+      # 検証済みのタグのコミットをデプロイする（ロールバック時は旧タグのコードと deploy アクションが使われる）
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.check.outputs.sha }}
+
+      - name: Deploy
+        id: deploy
+        uses: ./.github/actions/deploy
+        with:
+          app-env: prod
+          app-version: ${{ needs.check.outputs.tag }}
+          commit-sha: ${{ needs.check.outputs.sha }}
+          project-id: ${{ vars.GCP_PROJECT_ID }}
+          service-account: ${{ vars.DEPLOY_SA }}
+          workload-identity-provider: ${{ vars.GCP_WIF_PROVIDER }}

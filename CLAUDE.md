@@ -14,6 +14,7 @@ Firebase Hosting と GitHub Actions で、単一の HTML ページを stg / prod
 - `infra/bootstrap/` — プロジェクト・state バケット・WIF・Terraform 用 SA。**ローカルでのみ apply する**
 - `infra/modules/hosting-env/`, `infra/envs/{stg,prod}/` — Firebase / Hosting サイト / デプロイ用 SA。GitHub Actions で apply する
 - `.github/workflows/` — `ci`, `preview`, `deploy-stg`, `deploy-prod`, `terraform`
+- `.github/actions/deploy/` — ビルド → WIF 認証 → Firebase Hosting へのデプロイ → スモークテストをまとめた composite action（preview / stg / prod で共通）
 
 ## コマンド
 

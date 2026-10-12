@@ -1,0 +1,92 @@
+name: Build and deploy to Firebase Hosting
+description: >-
+  ページをビルドし、Workload Identity 連携で認証して Firebase Hosting へデプロイし、スモークテストを行う。
+  呼び出す前にリポジトリを checkout しておくこと（ジョブには permissions: id-token: write が必要）。
+
+inputs:
+  app-env:
+    description: ページに埋め込む環境名（prod / stg / preview）
+    required: true
+  app-version:
+    description: ページに埋め込むバージョン
+    required: true
+  commit-sha:
+    description: ページに埋め込むコミット SHA（スモークテストでもこの値を確認する）
+    required: true
+  project-id:
+    description: デプロイ先の GCP プロジェクト ID（Hosting サイト ID も同じ）
+    required: true
+  service-account:
+    description: デプロイに使う SA のメールアドレス
+    required: true
+  workload-identity-provider:
+    description: WIF プロバイダのリソース名
+    required: true
+  channel:
+    description: プレビューチャネル名。空なら live チャネルにデプロイする
+    required: false
+    default: ""
+  expires:
+    description: プレビューチャネルの有効期限
+    required: false
+    default: 7d
+
+outputs:
+  url:
+    description: デプロイ先の URL
+    value: ${{ steps.deploy.outputs.url }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .nvmrc
+        cache: npm
+
+    - name: Install dependencies
+      shell: bash
+      run: npm ci
+
+    - name: Build
+      shell: bash
+      env:
+        APP_ENV: ${{ inputs.app-env }}
+        APP_VERSION: ${{ inputs.app-version }}
+        COMMIT_SHA: ${{ inputs.commit-sha }}
+      run: npm run build
+
+    - name: Show OIDC token claims
+      shell: bash
+      run: scripts/show-oidc-claims.sh
+
+    - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+      with:
+        workload_identity_provider: ${{ inputs.workload-identity-provider }}
+        service_account: ${{ inputs.service-account }}
+
+    - name: Deploy
+      id: deploy
+      shell: bash
+      env:
+        PROJECT_ID: ${{ inputs.project-id }}
+        CHANNEL: ${{ inputs.channel }}
+        EXPIRES: ${{ inputs.expires }}
+        MESSAGE: ${{ inputs.app-env }} ${{ inputs.app-version }} (${{ inputs.commit-sha }})
+      run: |
+        if [[ -n "$CHANNEL" ]]; then
+          # このページは Firebase Auth を使わないため、Auth の承認済みドメインへの登録はしない
+          npx firebase hosting:channel:deploy "$CHANNEL" --expires "$EXPIRES" --project "$PROJECT_ID" \
+            --no-authorized-domains --json > deploy.json || { cat deploy.json; exit 1; }
+          cat deploy.json
+          url="$(jq -er '.result | to_entries[0].value.url' deploy.json)"
+        else
+          npx firebase deploy --only hosting --project "$PROJECT_ID" --message "$MESSAGE" --non-interactive
+          url="https://${PROJECT_ID}.web.app"
+        fi
+        echo "url=$url" >> "$GITHUB_OUTPUT"
+        echo "deployed: $url"
+
+    - name: Smoke test
+      shell: bash
+      run: scripts/smoke-test.sh "${{ steps.deploy.outputs.url }}" "${{ inputs.commit-sha }}"

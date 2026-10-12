@@ -116,8 +116,8 @@
   - [x] PR: `tf-plan` SA で stg / prod の plan（`-lock=false`）を実行し、結果を PR にコメントする
   - [x] main: `infra-stg` で apply → `infra-prod`（承認）で apply
   - [x] fork からの PR はスキップする
-- [ ] 👤 PR の plan コメントを確認してマージする
-- [ ] 👤 `infra-prod` の承認をする
+- [x] 👤 PR の plan コメントを確認してマージする
+- [x] 👤 `infra-prod` の承認をする（※ 承認待ちにならずに実行されたため、`infra-prod` / `prod` の Required reviewers の設定を要確認）
 - [ ] 👤 出力された `deployer` SA を Environment `stg` / `prod` の `DEPLOY_SA` に登録する（apply ジョブのサマリーに表示される）
 
 **完了条件**: stg / prod で Firebase と Hosting サイトが作成され、`terraform.yml` の plan と apply が成功している。
@@ -128,15 +128,15 @@
 
 ## フェーズ 5: デプロイ用ワークフロー（PR #4）
 
-- [ ] 🤖 共通処理（認証・ビルド・デプロイ・スモークテスト）を composite action（`.github/actions/deploy/`）にまとめる
-- [ ] 🤖 `.github/workflows/preview.yml`
-  - [ ] `hosting:channel:deploy pr-<番号> --expires <期限>` で `--json` の出力から URL を取得する
-  - [ ] スモークテストを実行し、PR に URL をコメントする（2 回目以降は同じコメントを更新する）
-- [ ] 🤖 `.github/workflows/deploy-stg.yml`（`main` への push、Environment `stg`、`concurrency`）
-- [ ] 🤖 `.github/workflows/deploy-prod.yml`
-  - [ ] タグ push と `workflow_dispatch`（入力 `tag`）
-  - [ ] タグが `main` 上のコミットであることを確認する
-  - [ ] Environment `prod`（承認）→ デプロイ → スモークテスト
+- [x] 🤖 共通処理（認証・ビルド・デプロイ・スモークテスト）を composite action（`.github/actions/deploy/`）にまとめる
+- [x] 🤖 `.github/workflows/preview.yml`
+  - [x] `hosting:channel:deploy pr-<番号> --expires <期限>` で `--json` の出力から URL を取得する
+  - [x] スモークテストを実行し、PR に URL をコメントする（2 回目以降は同じコメントを更新する）
+- [x] 🤖 `.github/workflows/deploy-stg.yml`（`main` への push、Environment `stg`、`concurrency`）
+- [x] 🤖 `.github/workflows/deploy-prod.yml`
+  - [x] タグ push と `workflow_dispatch`（入力 `tag`）
+  - [x] タグが `main` 上のコミットであることを確認する
+  - [x] Environment `prod`（承認）→ デプロイ → スモークテスト
 - [ ] 👤 この PR 自体でプレビューがデプロイされ、URL がコメントされることを確認してマージする
 
 **完了条件**: この PR でプレビューが動き、マージ後に stg へデプロイされてスモークテストが成功している。
