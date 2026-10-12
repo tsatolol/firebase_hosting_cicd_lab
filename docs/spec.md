@@ -1,0 +1,297 @@
+# Firebase Hosting CI/CD ラボ 仕様書
+
+- ステータス: ドラフト v0.1（2026-10-12）
+- リポジトリ: `tsatolol/firebase_hosting_cicd_lab`（public）
+
+## 1. 目的
+
+Google Cloud（Firebase Hosting）と GitHub Actions を使い、単一の HTML コンテンツを stg / prod の 2 環境へデプロイするパイプラインを構築し、その動作を確認する。インフラも Terraform でコード化し、GitHub Actions から plan / apply する。
+
+### スコープ外
+
+- カスタムドメイン（`*.web.app` のデフォルトドメインを使う）
+- 課金予算アラート
+- バックエンド（Cloud Functions / Cloud Run など）
+
+## 2. 決定事項サマリ
+
+| 項目 | 決定内容 |
+| --- | --- |
+| ホスティング | Firebase Hosting |
+| 環境分離 | GCP プロジェクトを分ける（admin / stg / prod） |
+| stg デプロイ | `main` ブランチへの push |
+| prod デプロイ | `v*.*.*` タグの push、GitHub Environments の承認後に実行 |
+| PR 時 | lint・テストに加え、stg プロジェクトのプレビューチャネルへデプロイし、URL を PR にコメント |
+| 認証 | Workload Identity 連携（OIDC、サービスアカウントキーは使わない） |
+| チェック | HTML/CSS/JS の lint、JS の単体テスト、デプロイ後のスモークテスト |
+| コンテンツ構成 | `index.html` 1 ファイルに CSS/JS を内包する |
+| ページ内容 | デプロイ情報ページ（環境・バージョン・コミット・デプロイ日時） |
+| ロールバック | `workflow_dispatch` で旧タグを指定して prod に再デプロイ |
+| インフラ | Terraform（プロジェクト作成も含む）。state は GCS に保存 |
+| Terraform の実行 | bootstrap はローカル実行、envs は GitHub Actions で実行 |
+| GCP 組織 | なし（個人 Gmail アカウント） |
+| プロジェクト ID | `fhcl-<env>-<乱数4桁>`（例: `fhcl-stg-a1b2`） |
+| リージョン | `asia-northeast1` |
+| 課金アカウント | 変数で渡す（コードに書かない） |
+
+## 3. 全体アーキテクチャ
+
+```mermaid
+flowchart LR
+  subgraph GitHub
+    PR[Pull Request] --> CI[ci / preview]
+    MAIN[push main] --> STG[deploy-stg]
+    TAG[push tag v*] --> PROD[deploy-prod<br/>承認待ち]
+    INFRA[infra/envs 変更] --> TF[terraform]
+  end
+
+  subgraph GCP_admin[fhcl-admin-xxxx]
+    WIF[Workload Identity Pool<br/>github]
+    STATE[(GCS: tfstate)]
+  end
+
+  subgraph GCP_stg[fhcl-stg-xxxx]
+    HSTG[Firebase Hosting<br/>live + preview channels]
+  end
+
+  subgraph GCP_prod[fhcl-prod-xxxx]
+    HPROD[Firebase Hosting<br/>live]
+  end
+
+  CI -- OIDC --> WIF
+  STG -- OIDC --> WIF
+  PROD -- OIDC --> WIF
+  TF -- OIDC --> WIF
+  CI --> HSTG
+  STG --> HSTG
+  PROD --> HPROD
+  TF --> STATE
+```
+
+### GCP プロジェクト
+
+| プロジェクト | 役割 | 作成方法 |
+| --- | --- | --- |
+| `fhcl-admin-xxxx` | Terraform state バケット、Workload Identity Pool、Terraform 用サービスアカウント | bootstrap |
+| `fhcl-stg-xxxx` | stg 環境の Firebase Hosting（プレビューチャネルもここ） | bootstrap（作成）＋ envs/stg（中身） |
+| `fhcl-prod-xxxx` | prod 環境の Firebase Hosting | bootstrap（作成）＋ envs/prod（中身） |
+
+- 3 つのプロジェクトで同じ乱数サフィックスを使う（`random_id` で 1 度だけ生成）。
+- Hosting サイト ID はプロジェクト ID と同じにする（デフォルトサイト）。URL は `https://fhcl-<env>-xxxx.web.app`。
+- 3 つとも課金アカウントにリンクする（Blaze プラン）。Hosting の利用量は小さく、ほぼ無料枠に収まる想定。
+
+## 4. コンテンツ仕様（`src/index.html`）
+
+### 4.1 表示内容
+
+| 項目 | 内容 |
+| --- | --- |
+| 環境バッジ | `stg` / `prod` / `preview` を表示し、環境ごとに色を変える（例: prod=緑、stg=橙、preview=紫） |
+| バージョン | prod: タグ名（`v1.2.3`）、stg: `main-<短縮SHA>`、preview: `pr-<番号>-<短縮SHA>` |
+| コミット SHA | 短縮表示し、GitHub のコミットページへリンクする |
+| デプロイ日時 | ISO 8601（UTC）で埋め込み、JS で閲覧者のローカル時刻と「◯分前」に整形して表示する |
+| ボタン | 「デプロイ情報をコピー」ボタンで、デプロイ情報を JSON としてクリップボードにコピーする |
+
+### 4.2 デプロイ情報の埋め込み
+
+- `src/index.html` にプレースホルダーを置き、ビルド時に置換して `dist/index.html` を生成する。
+  - `__APP_ENV__`, `__APP_VERSION__`, `__COMMIT_SHA__`, `__DEPLOYED_AT__`
+- 埋め込み先は `<body>` の `data-*` 属性とする（スモークテストで検証しやすくするため）。
+
+  ```html
+  <body data-env="__APP_ENV__" data-version="__APP_VERSION__"
+        data-commit="__COMMIT_SHA__" data-deployed-at="__DEPLOYED_AT__">
+  ```
+
+- ビルドは `scripts/build.sh` で行う（`src/` を `dist/` にコピーして `sed` で置換するだけ）。プレースホルダーが残った場合はエラーにする。
+- ソースは全環境で同一で、ビルド時に注入する値だけが異なる。
+
+### 4.3 JS の構成（テスト容易性）
+
+- インライン `<script>` 内のロジックは純粋関数として書き、`window.App` に公開する。
+  - 例: `formatRelativeTime(isoString, now)`, `envTheme(env)`, `buildDeployInfo(dataset)`
+- DOM 操作は `DOMContentLoaded` 時の初期化関数にまとめる。
+
+### 4.4 キャッシュ
+
+- `firebase.json` の `headers` で `index.html` に `Cache-Control: no-cache` を設定し、デプロイ直後に新しい内容が配信されるようにする。
+
+## 5. 品質チェック
+
+| 種類 | ツール | 対象 |
+| --- | --- | --- |
+| HTML lint | HTMLHint | `src/index.html` |
+| CSS lint | Stylelint ＋ `postcss-html` | `index.html` 内の `<style>` |
+| JS lint | ESLint（flat config）＋ `eslint-plugin-html` | `index.html` 内の `<script>` |
+| 単体テスト | Vitest ＋ jsdom | `index.html` を jsdom で読み込み、`window.App` の関数と初期化後の DOM を検証する |
+| スモークテスト | `scripts/smoke-test.sh`（curl） | デプロイ後の URL が HTTP 200 を返し、`data-commit` が今回のコミット SHA と一致すること（リトライあり） |
+
+- Node.js は実装時点の Active LTS を使い、`.nvmrc` で固定する。
+- `npm run lint` / `npm test` / `npm run build` をローカルと CI で共通に使う。
+
+## 6. GitHub Actions ワークフロー
+
+### 6.1 一覧
+
+| ファイル | トリガー | 内容 |
+| --- | --- | --- |
+| `ci.yml` | `pull_request`, `push: main` | lint、単体テスト、ビルド確認 |
+| `preview.yml` | `pull_request`（同一リポジトリからの PR のみ） | stg プロジェクトのプレビューチャネル `pr-<番号>` へデプロイ（有効期限 7 日）、スモークテスト、PR に URL をコメント |
+| `deploy-stg.yml` | `push: main`（`src/**` などアプリ関連のパス） | lint・テスト → stg の live チャネルへデプロイ → スモークテスト |
+| `deploy-prod.yml` | `push: tags v*.*.*`、`workflow_dispatch`（入力: `tag`） | タグが `main` に含まれることを確認 → lint・テスト → **承認待ち** → prod へデプロイ → スモークテスト |
+| `terraform.yml` | `pull_request` / `push: main`（`infra/envs/**` と `infra/modules/**`） | PR: stg・prod の plan を PR にコメント。main: stg を apply → **承認待ち** → prod を apply |
+
+### 6.2 デプロイの方法
+
+- `google-github-actions/auth` で Workload Identity 連携の認証を行い、資格情報ファイル（ADC）を生成する。
+- `firebase-tools`（npm の devDependencies にバージョンを固定）で直接デプロイする。
+  - live: `firebase deploy --only hosting --project $PROJECT_ID`
+  - preview: `firebase hosting:channel:deploy pr-<番号> --expires 7d --project $PROJECT_ID --json`
+- `FirebaseExtended/action-hosting-deploy` はサービスアカウントキー（JSON）が前提のため使わない。PR へのコメントは `actions/github-script` で行う。
+- 外部アクションはコミット SHA で固定する。
+- ワークフローの `permissions` は最小限にし、OIDC を使うジョブだけに `id-token: write` を付ける。
+
+### 6.3 prod デプロイとロールバック
+
+- タグ push 時は、`git merge-base --is-ancestor <tag の SHA> origin/main` でタグが main 上のコミットであることを検証する。
+- ロールバックは、`main` 上の `deploy-prod.yml` を `workflow_dispatch` で実行し、入力 `tag` に旧タグ（例: `v1.0.0`）を指定する。旧タグをチェックアウトしてビルド・デプロイする（通常時と同じく承認が必要）。
+- 同時実行は `concurrency: deploy-<env>` で直列化し、進行中のジョブはキャンセルしない。
+
+### 6.4 GitHub リポジトリ設定（手動）
+
+| 設定 | 内容 |
+| --- | --- |
+| Environment `stg` | デプロイ可能なブランチ: `main` |
+| Environment `prod` | Required reviewers: `tsatolol`。デプロイ可能な ref: タグ `v*` とブランチ `main`（ロールバック用） |
+| Environment `infra-stg` | デプロイ可能なブランチ: `main` |
+| Environment `infra-prod` | Required reviewers: `tsatolol`。デプロイ可能なブランチ: `main` |
+| Branch ruleset（`main`） | PR 必須、`ci` の成功を必須にする |
+| Tag ruleset（`v*`） | 作成・削除できるのは管理者のみ |
+| Variables | §7.4 を参照 |
+
+> 個人リポジトリで reviewer が自分 1 人のため、自分のデプロイを自分で承認する運用になる（「Prevent self-review」は無効にする）。
+
+## 7. インフラ（Terraform）
+
+### 7.1 構成
+
+```
+infra/
+  bootstrap/          # ローカルでのみ apply（あなたのユーザー権限）
+  modules/
+    hosting-env/      # stg / prod 共通モジュール
+  envs/
+    stg/              # GitHub Actions で apply
+    prod/             # GitHub Actions で apply
+```
+
+- Terraform と google / google-beta プロバイダのバージョンは、実装時点の最新安定版で固定する（`.terraform.lock.hcl` をコミットする）。
+
+### 7.2 bootstrap（ローカル実行）
+
+個人アカウント（組織なし）ではサービスアカウントがプロジェクトを作成できないため、プロジェクトの作成はユーザー権限で行う。
+
+作成するリソース:
+
+1. `random_id`（プロジェクト ID のサフィックス）
+2. プロジェクト `fhcl-admin-xxxx` / `fhcl-stg-xxxx` / `fhcl-prod-xxxx` と課金アカウントのリンク（`deletion_policy = "PREVENT"`）
+3. admin プロジェクトで必要な API の有効化（IAM、IAM Credentials、STS、Cloud Resource Manager、Service Usage、Cloud Storage）
+4. state バケット `fhcl-tfstate-xxxx`（`asia-northeast1`、バージョニング有効、均一なバケットレベルのアクセス、公開アクセス防止）
+5. Workload Identity Pool `github` とプロバイダ `github-actions`
+   - issuer: `https://token.actions.githubusercontent.com`
+   - 属性マッピング: `google.subject = assertion.sub`、`attribute.repository`、`attribute.repository_owner_id`
+   - 属性条件: `assertion.repository == 'tsatolol/firebase_hosting_cicd_lab' && assertion.repository_owner_id == '30972312'`
+6. Terraform 用サービスアカウント（admin プロジェクト内）
+   - `tf-plan`: stg / prod に `roles/viewer` と `roles/iam.securityReviewer`。state バケットに読み取り権限
+   - `tf-apply-stg`: stg に `roles/owner`。state バケットの `envs/stg/` に書き込み権限
+   - `tf-apply-prod`: prod に `roles/owner`。state バケットの `envs/prod/` に書き込み権限
+   - ※ ラボ用途のため owner を使う。最小権限への絞り込みは今後の課題
+7. Workload Identity 連携の紐付け（`roles/iam.workloadIdentityUser`、subject 単位で制限）
+   - `tf-plan` ← `repo:tsatolol/firebase_hosting_cicd_lab:pull_request`
+   - `tf-apply-stg` ← `repo:tsatolol/firebase_hosting_cicd_lab:environment:infra-stg`
+   - `tf-apply-prod` ← `repo:tsatolol/firebase_hosting_cicd_lab:environment:infra-prod`
+
+state の扱い: 初回はローカルの state で apply し、作成された GCS バケットに `terraform init -migrate-state` で移す（prefix: `bootstrap/`）。
+
+入力変数（`terraform.tfvars` は `.gitignore` 対象。サンプルとして `terraform.tfvars.example` をコミットする）:
+
+| 変数 | 例 |
+| --- | --- |
+| `billing_account_id` | `XXXXXX-XXXXXX-XXXXXX` |
+| `github_repository` | `tsatolol/firebase_hosting_cicd_lab` |
+| `github_repository_owner_id` | `30972312` |
+| `region` | `asia-northeast1` |
+
+出力: 各プロジェクト ID、WIF プロバイダのリソース名、各サービスアカウントのメールアドレス、state バケット名。これらを GitHub の Variables に登録する。
+
+### 7.3 envs/stg・envs/prod（GitHub Actions で実行）
+
+モジュール `hosting-env` が作成するリソース:
+
+1. API の有効化（Firebase Management、Firebase Hosting、IAM ほか）
+2. `google_firebase_project`（google-beta）
+3. `google_firebase_hosting_site`（サイト ID = プロジェクト ID）
+4. デプロイ用サービスアカウント `deployer`（env プロジェクト内）
+   - `roles/firebasehosting.admin`（必要に応じて `roles/serviceusage.serviceUsageConsumer` を追加。実装時に検証する）
+5. Workload Identity 連携の紐付け（`deployer` への `roles/iam.workloadIdentityUser`）
+   - stg: `...:environment:stg`（live デプロイ）と `...:pull_request`（プレビュー）
+   - prod: `...:environment:prod` のみ
+
+backend: `gcs`（バケット `fhcl-tfstate-xxxx`、prefix `envs/<env>/`）。plan は `-lock=false` で実行する（読み取り専用の SA のため）。
+
+### 7.4 GitHub Variables
+
+| スコープ | 変数 | 値 |
+| --- | --- | --- |
+| Repository | `GCP_WIF_PROVIDER` | `projects/<番号>/locations/global/workloadIdentityPools/github/providers/github-actions` |
+| Repository | `TF_STATE_BUCKET` | `fhcl-tfstate-xxxx` |
+| Repository | `TF_PLAN_SA` | `tf-plan@fhcl-admin-xxxx.iam.gserviceaccount.com` |
+| Repository | `STG_PROJECT_ID` / `PROD_PROJECT_ID` | plan / プレビュー用 |
+| Environment `stg` / `prod` | `GCP_PROJECT_ID`, `DEPLOY_SA` | 各環境の値 |
+| Environment `infra-stg` / `infra-prod` | `TF_APPLY_SA`, `GCP_PROJECT_ID` | 各環境の値 |
+
+シークレットは使わない（Workload Identity 連携のため不要）。
+
+## 8. セキュリティ上の考慮
+
+- サービスアカウントキーは作成しない。
+- WIF プロバイダの属性条件でリポジトリとオーナー ID を限定し、さらにサービスアカウントごとに OIDC の `sub`（Environment / pull_request）で使えるジョブを限定する。
+- fork からの PR は OIDC トークンを取得できないため、プレビューと terraform plan はスキップする（`github.event.pull_request.head.repo.full_name == github.repository` で判定）。
+- prod へのアプリのデプロイとインフラの apply は、どちらも GitHub Environments の承認を必須にする。
+- 課金アカウント ID や tfvars はコミットしない。
+
+## 9. 想定される注意点
+
+- 個人アカウントでは、課金アカウントにリンクできるプロジェクト数に上限がある（新しい課金アカウントでは少ない場合がある）。3 プロジェクト分の枠が必要。
+- Firebase を初めて使うアカウントでは、Firebase コンソールで利用規約への同意が必要になる場合がある。
+- bootstrap を実行する前に、`gcloud auth application-default login` と ADC の quota project の設定が必要。
+- Workload Identity の権限が反映されるまで数分かかることがある。
+
+## 10. 動作確認シナリオ
+
+1. bootstrap を apply し、GitHub の Environments と Variables を設定する
+2. `infra/envs` の PR → plan のコメントを確認 → マージ → stg apply → 承認 → prod apply
+3. ページを変更する PR → lint・テスト・プレビュー URL のコメントを確認
+4. マージ → stg に反映され、スモークテストが成功することを確認
+5. `v1.0.0` タグを push → 承認 → prod に反映されることを確認
+6. 再度変更して `v1.1.0` をリリース → `workflow_dispatch` で `v1.0.0` を指定してロールバック
+7. 異常系: lint エラーの PR が失敗すること、main 上にないコミットへのタグで prod デプロイが失敗すること
+
+## 11. ディレクトリ構成（予定）
+
+```
+.github/workflows/  ci.yml, preview.yml, deploy-stg.yml, deploy-prod.yml, terraform.yml
+docs/               spec.md, setup.md（初期セットアップ手順）
+infra/              bootstrap/, modules/hosting-env/, envs/{stg,prod}/
+scripts/            build.sh, smoke-test.sh
+src/                index.html
+tests/              index.test.js
+firebase.json, package.json, eslint.config.js, .stylelintrc.json, .htmlhintrc, .nvmrc
+```
+
+## 12. 未決事項
+
+- [ ] プレビューチャネルの有効期限（案: 7 日）
+- [ ] デプロイ失敗時の通知方法（案: GitHub の標準通知のみ）
+- [ ] prod デプロイ後に GitHub Release を自動作成するか
+- [ ] Terraform 用 SA の権限を owner から絞り込むか
