@@ -76,17 +76,50 @@ jobs:
         run: scripts/show-oidc-claims.sh
 
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        id: auth
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.TF_PLAN_SA }}
+          # state の有無を確認するために、アクセストークンも出力する
+          token_format: access_token
 
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
 
+      # state がまだない（初回 apply 前の）環境では、GCS backend が init 時に空の state を書き込もうとして、
+      # 読み取り専用の tf-plan では失敗する。その場合はローカルの空の state に対して plan する（結果は同じ）。
+      - name: Check state exists
+        id: state
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          STATE_OBJECT: envs%2F${{ matrix.env }}%2Fdefault.tfstate
+        run: |
+          code="$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            "https://storage.googleapis.com/storage/v1/b/${TF_STATE_BUCKET}/o/${STATE_OBJECT}")"
+          case "$code" in
+            200) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            404)
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::${{ matrix.env }} の state はまだありません。空の state に対して plan します（初回のみ）。"
+              ;;
+            *)
+              echo "::error::state の確認に失敗しました（HTTP ${code}）"
+              exit 1
+              ;;
+          esac
+
       - name: Terraform init
-        run: terraform -chdir="$TF_DIR" init -backend-config="bucket=$TF_STATE_BUCKET" -lockfile=readonly
+        env:
+          STATE_EXISTS: ${{ steps.state.outputs.exists }}
+        run: |
+          if [[ "$STATE_EXISTS" == "true" ]]; then
+            terraform -chdir="$TF_DIR" init -backend-config="bucket=$TF_STATE_BUCKET" -lockfile=readonly
+          else
+            printf 'terraform {\n  backend "local" {}\n}\n' > "$TF_DIR/backend_override.tf"
+            terraform -chdir="$TF_DIR" init -lockfile=readonly
+          fi
 
       # tf-plan は state の読み取りしかできないため、ロックを取らずに plan する
       - name: Terraform plan
@@ -105,10 +138,11 @@ jobs:
           PLAN_ENV: ${{ matrix.env }}
           PLAN_EXITCODE: ${{ steps.plan.outputs.exitcode }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          STATE_EXISTS: ${{ steps.state.outputs.exists }}
         with:
           script: |
             const fs = require("fs");
-            const { PLAN_ENV: env, PLAN_EXITCODE: code, HEAD_SHA: sha } = process.env;
+            const { PLAN_ENV: env, PLAN_EXITCODE: code, HEAD_SHA: sha, STATE_EXISTS: stateExists } = process.env;
             const status = { 0: "✅ 変更なし", 2: "📝 変更あり" }[code] ?? "❌ 失敗";
             const marker = `<!-- terraform-plan:${env} -->`;
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
@@ -123,6 +157,7 @@ jobs:
               `### Terraform plan: \`${env}\` — ${status}`,
               "",
               `コミット: ${sha} ／ [ワークフローの実行](${runUrl})`,
+              ...(stateExists === "true" ? [] : ["", "> state がまだないため、空の state に対して plan しました（初回 apply 前）。"]),
               "",
               "<details><summary>plan の出力</summary>",
               "",
